@@ -67,7 +67,10 @@ function SetupPasswordContent() {
       return true
     } catch (err) {
       if (err instanceof z.ZodError) {
-        setPasswordError(err.errors[0]?.message || 'Senha inválida')
+        const firstError = err.errors?.[0]?.message
+        setPasswordError(firstError || 'Senha inválida')
+      } else {
+        setPasswordError('Senha inválida')
       }
       return false
     }

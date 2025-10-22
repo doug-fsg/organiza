@@ -9,10 +9,18 @@ import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Calendar, User, Link, MessageSquare, CheckSquare, Send, Plus, X } from 'lucide-react'
+import { Calendar, User, Link, MessageSquare, CheckSquare, Send, Plus, X, CheckCircle2, XCircle, Paperclip } from 'lucide-react'
 import { api } from '@/lib/api'
 import toast from 'react-hot-toast'
 import { useSession } from 'next-auth/react'
+import { AttachmentPreview } from './attachment-preview'
+
+interface UploadedFile {
+  fileName: string
+  fileSize: number
+  mimeType: string
+  filePath: string
+}
 
 interface SubtaskDetailsModalProps {
   isOpen: boolean
@@ -28,12 +36,19 @@ interface ChecklistItem {
   checked: boolean
 }
 
-export function SubtaskDetailsModal({ isOpen, onClose, subtask, mainTaskId, initialTab = 'details' }: SubtaskDetailsModalProps) {
+export function SubtaskDetailsModal({ 
+  isOpen, 
+  onClose, 
+  subtask, 
+  mainTaskId, 
+  initialTab = 'details'
+}: SubtaskDetailsModalProps) {
   const { data: session } = useSession()
   const utils = api.useUtils()
   
   // Estados para comentários
   const [newComment, setNewComment] = useState('')
+  const [pendingAttachments, setPendingAttachments] = useState<UploadedFile[]>([])
   
   // Estados para checklist
   const [newChecklistItem, setNewChecklistItem] = useState('')
@@ -51,6 +66,7 @@ export function SubtaskDetailsModal({ isOpen, onClose, subtask, mainTaskId, init
 
   // Ref para o scroll dos comentários
   const commentsEndRef = useRef<HTMLDivElement>(null)
+  const hasScrolledOnOpenRef = useRef<boolean>(false)
 
   // Scroll automático para o final dos comentários
   const scrollToBottom = () => {
@@ -69,7 +85,7 @@ export function SubtaskDetailsModal({ isOpen, onClose, subtask, mainTaskId, init
     { subtaskId: subtask?.id || '' },
     { 
       enabled: !!subtask?.id && isOpen,
-      refetchInterval: isOpen ? 3000 : false, // Atualiza a cada 3 segundos quando modal aberto
+      refetchInterval: isOpen ? 10000 : false, // Reduzido para 10 segundos quando modal aberto
       refetchIntervalInBackground: false, // Só atualiza quando modal visível
     }
   )
@@ -85,6 +101,9 @@ export function SubtaskDetailsModal({ isOpen, onClose, subtask, mainTaskId, init
       toast.error('Erro ao adicionar comentário')
     },
   })
+
+  const createAttachments = api.attachment.createMany.useMutation()
+  const deleteAttachment = api.attachment.delete.useMutation()
 
   const markAsRead = api.comment.markAsRead.useMutation({
     onSuccess: () => {
@@ -103,12 +122,20 @@ export function SubtaskDetailsModal({ isOpen, onClose, subtask, mainTaskId, init
     },
   })
 
-  // Scroll para o final quando abrir tab de comentários ou quando comentários mudarem
+  // Scroll para o final apenas uma vez quando o modal é aberto na aba de comentários
   useEffect(() => {
-    if (activeTab === 'comments' && comments && comments.length > 0) {
+    if (activeTab === 'comments' && comments && comments.length > 0 && !hasScrolledOnOpenRef.current) {
       setTimeout(scrollToBottom, 100) // Delay para garantir renderização
+      hasScrolledOnOpenRef.current = true // Marcar que já fez scroll
     }
   }, [activeTab, comments])
+
+  // Resetar flag quando modal fechar
+  useEffect(() => {
+    if (!isOpen) {
+      hasScrolledOnOpenRef.current = false
+    }
+  }, [isOpen])
 
   if (!subtask) return null
 
@@ -158,14 +185,97 @@ export function SubtaskDetailsModal({ isOpen, onClose, subtask, mainTaskId, init
     }
   }
 
-  const handleAddComment = () => {
+  const handleAddComment = async () => {
     if (!newComment.trim() || !session?.user?.id) return
 
-    createComment.mutate({
-      content: newComment,
-      subtaskId: subtask.id,
-      authorId: session.user.id,
-    })
+    try {
+      // Criar o comentário
+      const comment = await createComment.mutateAsync({
+        content: newComment,
+        subtaskId: subtask.id,
+        authorId: session.user.id,
+      })
+
+      // Se houver anexos pendentes, criar registros de anexos
+      if (pendingAttachments.length > 0 && comment) {
+        await createAttachments.mutateAsync({
+          commentId: comment.id,
+          attachments: pendingAttachments.map(att => ({
+            fileName: att.fileName,
+            fileSize: att.fileSize,
+            mimeType: att.mimeType,
+            filePath: att.filePath,
+            uploadedBy: session.user.id,
+          })),
+        })
+        setPendingAttachments([])
+      }
+
+      setNewComment('')
+      refetchComments()
+    } catch (error) {
+      console.error('Erro ao adicionar comentário:', error)
+    }
+  }
+
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [isUploadingFiles, setIsUploadingFiles] = useState(false)
+
+  const handleFileSelect = async (files: FileList | null) => {
+    if (!files || files.length === 0) return
+
+    const fileArray = Array.from(files)
+
+    if (fileArray.length > 10) {
+      toast.error('Máximo de 10 arquivos por vez')
+      return
+    }
+
+    setIsUploadingFiles(true)
+
+    try {
+      const formData = new FormData()
+      fileArray.forEach((file) => {
+        formData.append('files', file)
+      })
+
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Erro ao fazer upload')
+      }
+
+      const data = await response.json()
+      setPendingAttachments((prev) => [...prev, ...data.files])
+      toast.success(`${data.files.length} arquivo(s) anexado(s)`)
+    } catch (error: any) {
+      toast.error(error.message || 'Erro ao fazer upload')
+    } finally {
+      setIsUploadingFiles(false)
+    }
+  }
+
+  const removePendingAttachment = (index: number) => {
+    setPendingAttachments((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const handleDeleteAttachment = async (attachmentId: string) => {
+    if (!session?.user?.id) return
+    
+    try {
+      await deleteAttachment.mutateAsync({
+        id: attachmentId,
+        userId: session.user.id,
+      })
+      refetchComments()
+      toast.success('Anexo removido')
+    } catch (error: any) {
+      toast.error(error.message || 'Erro ao remover anexo')
+    }
   }
 
   const handleAddChecklistItem = () => {
@@ -318,20 +428,90 @@ export function SubtaskDetailsModal({ isOpen, onClose, subtask, mainTaskId, init
 
           {/* Tab: Comentários */}
           <TabsContent value="comments" className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-medium">Comentários</h3>
+              {comments && comments.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={scrollToBottom}
+                  className="text-xs text-gray-500 hover:text-gray-700"
+                >
+                  Ir para o final
+                </Button>
+              )}
+            </div>
             <ScrollArea className="h-[320px] pr-4">
               {comments && comments.length > 0 ? (
                 <div className="space-y-3">
-                  {comments.map((comment: any) => (
-                    <div key={comment.id} className="bg-gray-50 p-3 rounded border">
-                      <div className="flex items-start justify-between mb-2">
-                        <span className="font-medium text-sm">{comment.author.name}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {formatDateTime(comment.createdAt)}
-                        </span>
+                  {comments.map((comment: any) => {
+                    // Verificar se é um comentário de reprovação (sistema)
+                    let isRejectionComment = false
+                    let rejectionData = null
+                    
+                    try {
+                      const parsed = JSON.parse(comment.content)
+                      if (parsed.type === 'rejection') {
+                        isRejectionComment = true
+                        rejectionData = parsed
+                      }
+                    } catch {
+                      // Não é JSON, comentário normal
+                    }
+
+                    if (isRejectionComment && rejectionData) {
+                      // Comentário de reprovação - estilo Chatwoot
+                      return (
+                        <div key={comment.id} className="relative pl-4 border-l-4 border-l-red-400">
+                          <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                            <div className="flex items-start gap-2 mb-2">
+                              <div className="flex items-center justify-center w-6 h-6 rounded-full bg-red-100 shrink-0">
+                                <XCircle className="h-4 w-4 text-red-600" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-sm font-semibold text-red-900">
+                                    Tarefa Reprovada
+                                  </span>
+                                  <span className="text-xs text-red-600">
+                                    {formatDateTime(comment.createdAt)}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-red-700 mb-2">
+                                  por {rejectionData.rejectorName}
+                                </p>
+                                <div className="bg-white rounded p-2 border border-red-200">
+                                  <p className="text-sm text-gray-800">{rejectionData.reason}</p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    }
+
+                    // Comentário normal
+                    return (
+                      <div key={comment.id} className="bg-gray-50 p-3 rounded border">
+                        <div className="flex items-start justify-between mb-2">
+                          <span className="font-medium text-sm">{comment.author.name}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {formatDateTime(comment.createdAt)}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-700">{comment.content}</p>
+                        
+                        {/* Anexos do comentário */}
+                        {comment.attachments && comment.attachments.length > 0 && (
+                          <AttachmentPreview
+                            attachments={comment.attachments}
+                            currentUserId={session?.user?.id || ''}
+                            onDelete={handleDeleteAttachment}
+                          />
+                        )}
                       </div>
-                      <p className="text-sm text-gray-700">{comment.content}</p>
-                    </div>
-                  ))}
+                    )
+                  })}
                   {/* Elemento invisível no final para scroll automático */}
                   <div ref={commentsEndRef} />
                 </div>
@@ -341,6 +521,35 @@ export function SubtaskDetailsModal({ isOpen, onClose, subtask, mainTaskId, init
                 </div>
               )}
             </ScrollArea>
+
+            {/* Anexos Pendentes */}
+            {pendingAttachments.length > 0 && (
+              <div className="space-y-2 pb-2 border-b">
+                <p className="text-xs font-medium text-gray-600">
+                  Anexos prontos para enviar:
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {pendingAttachments.map((file, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center gap-1 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-xs"
+                    >
+                      <span className="font-medium truncate max-w-[150px]">
+                        {file.fileName}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removePendingAttachment(index)}
+                        className="h-4 w-4 p-0 ml-1"
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="flex gap-2 pt-2 border-t">
               <Textarea
@@ -355,14 +564,35 @@ export function SubtaskDetailsModal({ isOpen, onClose, subtask, mainTaskId, init
                   }
                 }}
               />
-              <Button
-                size="icon"
-                onClick={handleAddComment}
-                disabled={!newComment.trim() || createComment.isPending}
-                className="shrink-0"
-              >
-                <Send className="h-4 w-4" />
-              </Button>
+              <div className="flex flex-col gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  onChange={(e) => handleFileSelect(e.target.files)}
+                  className="hidden"
+                  disabled={createComment.isPending || isUploadingFiles}
+                  accept="*/*"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={createComment.isPending || isUploadingFiles}
+                  className="shrink-0"
+                >
+                  <Paperclip className="h-4 w-4" />
+                </Button>
+                <Button
+                  size="icon"
+                  onClick={handleAddComment}
+                  disabled={!newComment.trim() || createComment.isPending}
+                  className="shrink-0"
+                >
+                  <Send className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           </TabsContent>
 
@@ -427,8 +657,8 @@ export function SubtaskDetailsModal({ isOpen, onClose, subtask, mainTaskId, init
 
         <div className="flex justify-end pt-2 border-t">
           <Button variant="outline" onClick={onClose}>
-              Fechar
-            </Button>
+            Fechar
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

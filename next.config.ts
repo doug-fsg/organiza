@@ -10,6 +10,10 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true, // Ignora erros de TypeScript no build
   },
+  images: {
+    remotePatterns: [],
+    unoptimized: true, // Desabilitar otimização para arquivos locais
+  },
 };
 
 export default nextConfig;

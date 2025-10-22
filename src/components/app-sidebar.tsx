@@ -51,6 +51,7 @@ interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   activeTab: string
   onTabChange: (tab: string) => void
   onLogout: () => void
+  unreadCommentsCount?: number
 }
 
 export function AppSidebar({ 
@@ -58,6 +59,7 @@ export function AppSidebar({
   activeTab, 
   onTabChange, 
   onLogout,
+  unreadCommentsCount = 0,
   ...props 
 }: AppSidebarProps) {
   const getRoleLabel = (role: UserRole) => {
@@ -98,7 +100,7 @@ export function AppSidebar({
       description: "Visualizar tarefas no calendário"
     },
     {
-      title: "Tarefas",
+      title: "Minhas Tarefas",
       icon: BarChart3,
       value: "kanban",
       isVisible: true,
@@ -146,13 +148,21 @@ export function AppSidebar({
                   >
                     <item.icon className="size-4" />
                     <span>{item.title}</span>
+                    {item.value === 'approvals' && unreadCommentsCount > 0 && (
+                      <Badge 
+                        variant="default" 
+                        className="ml-auto bg-purple-600 text-white text-xs px-1.5 py-0 min-w-[20px] justify-center"
+                      >
+                        {unreadCommentsCount}
+                      </Badge>
+                    )}
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
 
               {/* Seção específica para Administradores */}
               {user.role === UserRole.ADMIN && (
-                <Collapsible defaultOpen className="group/collapsible">
+                <Collapsible className="group/collapsible">
                   <SidebarMenuItem>
                     <CollapsibleTrigger asChild>
                       <SidebarMenuButton>

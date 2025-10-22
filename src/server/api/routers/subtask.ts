@@ -160,21 +160,23 @@ export const subtaskRouter = createTRPCRouter({
         userId: z.string().optional(), // Opcional agora, usa ctx.userId se não fornecido
         status: z.nativeEnum(SubtaskStatus).optional(),
         userRole: z.nativeEnum(UserRole).optional(), // Role do usuário para filtro
+        showAllTasks: z.boolean().optional(), // Novo parâmetro para controlar visibilidade
       }).optional()
     )
     .query(async ({ ctx, input }) => {
       const userId = input?.userId || ctx.userId
       const userRole = input?.userRole
+      const showAllTasks = input?.showAllTasks
       
-      // ADMIN e OWNER veem todas as tarefas da conta
-      // MEMBER vê apenas as suas
-      const isAdminOrOwner = userRole === UserRole.ADMIN || userRole === UserRole.OWNER
+      // Se showAllTasks for true, ADMIN e OWNER veem todas as tarefas da conta
+      // Caso contrário, todos veem apenas suas próprias tarefas
+      const shouldShowAllTasks = showAllTasks && (userRole === UserRole.ADMIN || userRole === UserRole.OWNER)
       
       return ctx.prisma.subtask.findMany({
         where: {
-          // Se for ADMIN/OWNER, não filtra por assignedToId
-          // Se for MEMBER, filtra por assignedToId
-          ...(isAdminOrOwner ? {} : { assignedToId: userId }),
+          // Se deve mostrar todas as tarefas, não filtra por assignedToId
+          // Caso contrário, filtra por assignedToId
+          ...(shouldShowAllTasks ? {} : { assignedToId: userId }),
           mainTask: {
             accountId: ctx.accountId, // Sempre filtrar por conta!
           },
@@ -539,7 +541,7 @@ export const subtaskRouter = createTRPCRouter({
       }
 
       // Se concluída, notificar gestor para aprovação
-      if (result.newStatus === SubtaskStatus.APPROVED_PENDING) {
+      if (result.newStatus === SubtaskStatus.COMPLETED_PENDING) {
         const subtask = await ctx.prisma.subtask.findUnique({
           where: { id: input.id },
           include: {
@@ -683,8 +685,8 @@ export const subtaskRouter = createTRPCRouter({
       if (subtask?.assignedTo) {
         await ctx.prisma.notification.create({
           data: {
-            title: 'Subtarefa reprovada',
-            message: `Sua subtarefa "${subtask.title}" foi reprovada. Motivo: ${input.reason}`,
+            title: 'Tarefa Reprovada',
+            message: `Sua subtarefa "${subtask.title}" foi reprovada.`,
             type: 'SUBTASK_REJECTED',
             userId: subtask.assignedTo.id
           }

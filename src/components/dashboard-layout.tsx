@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { UserRole } from '@prisma/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar'
@@ -10,6 +10,7 @@ import { AppSidebar } from '@/components/app-sidebar'
 import { ManagerApprovalPanel } from '@/components/manager-approval-panel'
 import { KanbanBoard } from '@/components/kanban-board'
 import { UserManagement } from '@/components/user-management'
+import { api } from '@/lib/api'
 
 interface User {
   id: string
@@ -27,6 +28,38 @@ export function DashboardLayout({ user, onLogout }: DashboardLayoutProps) {
   const [defaultOpen, setDefaultOpen] = useState(true)
 
   const canManageTasks = user.role === UserRole.OWNER || user.role === UserRole.ADMIN || user.role === UserRole.MANAGER
+
+  // Buscar tarefas para calcular comentários não lidos
+  const { data: mainTasks } = api.mainTask.getAll.useQuery(undefined, {
+    enabled: canManageTasks,
+    refetchInterval: 20000, // Reduzido para 20 segundos
+    refetchIntervalInBackground: false, // Só atualiza quando componente visível
+  })
+
+  // Calcular quantidade de tarefas com comentários não lidos
+  const unreadCommentsCount = useMemo(() => {
+    if (!mainTasks || !canManageTasks) return 0
+    
+    return mainTasks.reduce((count: number, task) => {
+      const subtasksWithUnread = task.subtasks.filter((subtask: any) => {
+        const hasComments = subtask.comments && subtask.comments.length > 0
+        if (!hasComments) return false
+        
+        const unreadComments = subtask.comments.filter((comment: any) => {
+          if (comment.authorId === user.id) return false
+          try {
+            const readBy = comment.readBy ? JSON.parse(comment.readBy) : []
+            return !readBy.includes(user.id)
+          } catch {
+            return true
+          }
+        })
+        
+        return unreadComments.length > 0
+      })
+      return count + subtasksWithUnread.length
+    }, 0)
+  }, [mainTasks, canManageTasks, user.id])
 
   // Ler o estado inicial da sidebar dos cookies
   useEffect(() => {
@@ -99,6 +132,7 @@ export function DashboardLayout({ user, onLogout }: DashboardLayoutProps) {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         onLogout={onLogout}
+        unreadCommentsCount={unreadCommentsCount}
       />
       <SidebarInset>
         <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-12">

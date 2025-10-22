@@ -35,6 +35,7 @@ export const commentRouter = createTRPCRouter({
         where: { subtaskId: input.subtaskId },
         include: {
           author: true,
+          attachments: true,
         },
         orderBy: { createdAt: 'asc' },
       })

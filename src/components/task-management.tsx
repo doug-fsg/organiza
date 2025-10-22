@@ -815,9 +815,14 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
                     <SelectValue placeholder="Selecionar" />
                   </SelectTrigger>
                   <SelectContent>
-                    {users?.filter(u => u.role === UserRole.MEMBER).map((user) => (
+                    {users?.map((user) => (
                       <SelectItem key={user.id} value={user.id}>
-                        {user.name}
+                        {user.name} ({
+                          user.role === UserRole.OWNER ? 'Proprietário' :
+                          user.role === UserRole.ADMIN ? 'Admin' :
+                          user.role === UserRole.MANAGER ? 'Gerente' :
+                          'Membro'
+                        })
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1273,9 +1278,14 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">Sem responsável</SelectItem>
-                    {users?.filter(u => u.role === UserRole.MEMBER).map((user) => (
+                    {users?.map((user) => (
                       <SelectItem key={user.id} value={user.id}>
-                        {user.name}
+                        {user.name} ({
+                          user.role === UserRole.OWNER ? 'Proprietário' :
+                          user.role === UserRole.ADMIN ? 'Admin' :
+                          user.role === UserRole.MANAGER ? 'Gerente' :
+                          'Membro'
+                        })
                       </SelectItem>
                     ))}
                   </SelectContent>

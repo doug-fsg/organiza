@@ -5,6 +5,7 @@ import { subtaskRouter } from '@/server/api/routers/subtask'
 import { commentRouter } from '@/server/api/routers/comment'
 import { notificationRouter } from '@/server/api/routers/notification'
 import { userManagementRouter } from '@/server/api/routers/user-management'
+import { attachmentRouter } from '@/server/api/routers/attachment'
 
 /**
  * Router principal da API tRPC.
@@ -17,6 +18,7 @@ export const appRouter = createTRPCRouter({
   comment: commentRouter,
   notification: notificationRouter,
   userManagement: userManagementRouter,
+  attachment: attachmentRouter,
 })
 
 // Exportar tipo para o cliente

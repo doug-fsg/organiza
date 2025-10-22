@@ -59,7 +59,7 @@ export function TaskCalendarSidebar({
     { value: SubtaskStatus.NOT_STARTED, label: 'Não Iniciada' },
     { value: SubtaskStatus.IN_PROGRESS, label: 'Em Andamento' },
     { value: SubtaskStatus.BLOCKED, label: 'Bloqueada' },
-    { value: SubtaskStatus.APPROVED_PENDING, label: 'Aguardando Aprovação' },
+    { value: SubtaskStatus.COMPLETED_PENDING, label: 'Aguardando Aprovação' },
     { value: SubtaskStatus.APPROVED, label: 'Aprovada' },
     { value: SubtaskStatus.REJECTED, label: 'Rejeitada' }
   ]
@@ -124,7 +124,7 @@ export function TaskCalendarSidebar({
     switch (status) {
       case SubtaskStatus.APPROVED:
         return 'bg-green-500'
-      case SubtaskStatus.APPROVED_PENDING:
+      case SubtaskStatus.COMPLETED_PENDING:
         return 'bg-yellow-500'
       case SubtaskStatus.BLOCKED:
         return 'bg-red-500'
@@ -158,7 +158,7 @@ export function TaskCalendarSidebar({
     switch (status) {
       case SubtaskStatus.APPROVED:
         return <CheckCircle2 className="w-3 h-3" />
-      case SubtaskStatus.APPROVED_PENDING:
+      case SubtaskStatus.COMPLETED_PENDING:
         return <Clock className="w-3 h-3" />
       case SubtaskStatus.BLOCKED:
         return <XCircle className="w-3 h-3" />

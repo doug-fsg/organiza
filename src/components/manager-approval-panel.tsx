@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { UserRole, SubtaskStatus, Priority } from '@prisma/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -25,10 +25,13 @@ import {
   Calendar,
   BarChart3,
   MessageSquare,
-  History
+  History,
+  Eye
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import toast from 'react-hot-toast'
+import { SubtaskDetailsModal } from './subtask-details-modal'
+import { useNotificationSound } from '@/hooks/use-notification-sound'
 
 interface User {
   id: string
@@ -42,6 +45,11 @@ interface ManagerApprovalPanelProps {
 
 export function ManagerApprovalPanel({ currentUser }: ManagerApprovalPanelProps) {
   const [selectedSubtask, setSelectedSubtask] = useState<any>(null)
+  const [detailsModal, setDetailsModal] = useState({
+    isOpen: false,
+    subtask: null as any,
+    mainTaskId: ''
+  })
   const [rejectionModal, setRejectionModal] = useState({
     isOpen: false,
     subtaskId: '',
@@ -53,13 +61,56 @@ export function ManagerApprovalPanel({ currentUser }: ManagerApprovalPanelProps)
   })
 
   const utils = api.useUtils()
+  const { playNotificationSound } = useNotificationSound()
+  
+  // Ref para armazenar contagem anterior de comentários não lidos por subtarefa
+  const previousUnreadCountRef = useRef<Record<string, number>>({})
 
   // Queries
-  const { data: mainTasks, isLoading } = api.mainTask.getAll.useQuery()
+  const { data: mainTasks, isLoading } = api.mainTask.getAll.useQuery(undefined, {
+    refetchInterval: 20000, // Reduzido para 20 segundos
+    refetchIntervalInBackground: false, // Só atualiza quando componente visível
+  })
   const { data: history } = api.subtask.getHistory.useQuery(
     { id: historyModal.subtaskId },
     { enabled: historyModal.isOpen && !!historyModal.subtaskId }
   )
+
+  // Efeito para tocar som quando há novos comentários não lidos
+  useEffect(() => {
+    if (!mainTasks) return
+
+    mainTasks.forEach((task) => {
+      task.subtasks.forEach((subtask: any) => {
+        const unreadCount = subtask.comments?.filter((comment: any) => {
+          if (comment.authorId === currentUser.id) return false
+          try {
+            const readBy = comment.readBy ? JSON.parse(comment.readBy) : []
+            return !readBy.includes(currentUser.id)
+          } catch {
+            return true
+          }
+        }).length || 0
+
+        const previousCount = previousUnreadCountRef.current[subtask.id]
+
+        // Verificar se o modal desta subtarefa específica está aberto
+        const isModalOpenForThisSubtask = detailsModal.isOpen && detailsModal.subtask?.id === subtask.id
+        
+        // Tocar som se aumentou E modal não está aberto para esta subtarefa
+        if (previousCount !== undefined && unreadCount > previousCount && !isModalOpenForThisSubtask) {
+          playNotificationSound()
+          toast(`Novo comentário em "${subtask.title}"`, {
+            icon: '💬',
+            duration: 4000,
+          })
+        }
+
+        // Atualizar contagem anterior desta subtarefa
+        previousUnreadCountRef.current[subtask.id] = unreadCount
+      })
+    })
+  }, [mainTasks, currentUser.id, playNotificationSound, detailsModal.isOpen, detailsModal.subtask])
 
   // Mutations
   const approveSubtask = api.subtask.approveSubtask.useMutation({
@@ -118,6 +169,44 @@ export function ManagerApprovalPanel({ currentUser }: ManagerApprovalPanelProps)
     return mainTasks.reduce((acc: any[], task) => {
       return acc.concat(task.subtasks.map((s: any) => ({ ...s, mainTaskTitle: task.title })))
     }, [])
+  }
+
+  const getSubtasksWithUnreadComments = (subtasksList?: any[]) => {
+    if (!mainTasks) return 0
+    const subsToCheck = subtasksList || getAllSubtasks()
+    return subsToCheck.filter((subtask: any) => {
+      const hasComments = subtask.comments && subtask.comments.length > 0
+      if (!hasComments) return false
+      
+      const hasUnread = subtask.comments.some((comment: any) => {
+        if (comment.authorId === currentUser.id) return false
+        try {
+          const readBy = comment.readBy ? JSON.parse(comment.readBy) : []
+          return !readBy.includes(currentUser.id)
+        } catch {
+          return true
+        }
+      })
+      
+      return hasUnread
+    }).length
+  }
+
+  // Função específica para "Todas as Subtarefas" - exclui as que já estão nas outras abas
+  const getOtherSubtasksWithUnreadComments = () => {
+    if (!mainTasks) return 0
+    const allSubtasks = getAllSubtasks()
+    const pendingSubtasks = getPendingSubtasks()
+    const blockedSubtasks = getBlockedSubtasks()
+    
+    // Filtrar subtarefas que NÃO estão em "Aguardando" nem "Bloqueadas"
+    const otherSubtasks = allSubtasks.filter((subtask: any) => {
+      const isPending = pendingSubtasks.some((p: any) => p.id === subtask.id)
+      const isBlocked = blockedSubtasks.some((b: any) => b.id === subtask.id)
+      return !isPending && !isBlocked
+    })
+    
+    return getSubtasksWithUnreadComments(otherSubtasks)
   }
 
   const handleApprove = (subtaskId: string) => {
@@ -206,8 +295,40 @@ export function ManagerApprovalPanel({ currentUser }: ManagerApprovalPanelProps)
     return new Date(date).toLocaleDateString('pt-BR')
   }
 
-  const SubtaskCard = ({ subtask, showActions = true }: { subtask: any; showActions?: boolean }) => (
-    <Card className="mb-4">
+  const handleViewDetails = (subtask: any, initialTab: 'details' | 'comments' | 'checklist' = 'details') => {
+    // Encontrar o mainTaskId
+    const mainTask = mainTasks?.find(task => 
+      task.subtasks.some((s: any) => s.id === subtask.id)
+    )
+    
+    setDetailsModal({
+      isOpen: true,
+      subtask: { ...subtask, initialTab },
+      mainTaskId: mainTask?.id || ''
+    })
+  }
+
+  const SubtaskCard = ({ subtask, showActions = true }: { subtask: any; showActions?: boolean }) => {
+    const hasComments = subtask.comments && subtask.comments.length > 0
+    const hasChecklist = subtask.checklistItems && JSON.parse(subtask.checklistItems || '[]').length > 0
+    
+    // Calcular comentários não lidos pelo gestor atual
+    const unreadComments = hasComments 
+      ? subtask.comments.filter((comment: any) => {
+          if (comment.authorId === currentUser.id) return false // Não contar comentários do próprio gestor
+          try {
+            const readBy = comment.readBy ? JSON.parse(comment.readBy) : []
+            return !readBy.includes(currentUser.id)
+          } catch {
+            return true
+          }
+        }).length
+      : 0
+
+    const hasUnreadComments = unreadComments > 0
+    
+    return (
+      <Card className={`mb-4 hover:shadow-md transition-shadow ${hasUnreadComments ? 'bg-purple-50/20' : ''}`}>
       <CardContent className="p-4">
         <div className="space-y-3">
           {/* Header */}
@@ -228,7 +349,7 @@ export function ManagerApprovalPanel({ currentUser }: ManagerApprovalPanelProps)
 
           {/* Description */}
           {subtask.description && (
-            <p className="text-sm text-gray-700">{subtask.description}</p>
+              <p className="text-sm text-gray-700 line-clamp-2">{subtask.description}</p>
           )}
 
           {/* Meta informações */}
@@ -251,28 +372,52 @@ export function ManagerApprovalPanel({ currentUser }: ManagerApprovalPanelProps)
             </div>
           </div>
 
-          {/* Rejection reason if rejected */}
-          {subtask.status === SubtaskStatus.REJECTED && subtask.rejectionReason && (
-            <div className="bg-red-50 border border-red-200 rounded p-3">
-              <p className="text-sm text-red-800">
-                <strong>Motivo da reprovação:</strong> {subtask.rejectionReason}
-              </p>
+            {/* Indicadores de Checklist e Comentários */}
+            {(hasComments || hasChecklist) && (
+              <div className="flex items-center gap-3 text-sm">
+                {hasChecklist && (
+                  <button
+                    onClick={() => handleViewDetails(subtask, 'checklist')}
+                    className="flex items-center gap-1 text-blue-600 hover:text-blue-700 hover:underline transition-colors"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span>{JSON.parse(subtask.checklistItems || '[]').filter((item: any) => item.checked).length}/{JSON.parse(subtask.checklistItems || '[]').length} itens</span>
+                  </button>
+                )}
+                {hasComments && (
+                  <button
+                    onClick={() => handleViewDetails(subtask, 'comments')}
+                    className={`flex items-center gap-1 transition-all hover:underline ${
+                      hasUnreadComments 
+                        ? 'text-purple-600 font-semibold hover:text-purple-700' 
+                        : 'text-gray-600 hover:text-gray-700'
+                    }`}
+                  >
+                    <MessageSquare className={`h-4 w-4 ${hasUnreadComments ? 'fill-purple-600' : ''}`} />
+                    <span>{subtask.comments.length} comentário{subtask.comments.length !== 1 ? 's' : ''}</span>
+                    {hasUnreadComments && (
+                      <Badge variant="default" className="ml-1 bg-purple-600 text-white text-xs px-1.5 py-0 animate-pulse">
+                        {unreadComments} novo{unreadComments !== 1 ? 's' : ''}
+                      </Badge>
+                    )}
+                  </button>
+                )}
             </div>
           )}
 
+
           {/* Actions */}
           {showActions && subtask.status === SubtaskStatus.COMPLETED_PENDING && (
-            <div className="flex items-center justify-between pt-3 border-t">
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center justify-between pt-3 border-t gap-2">
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setHistoryModal({ isOpen: true, subtaskId: subtask.id })}
+                  onClick={() => handleViewDetails(subtask)}
+                  className="flex-1"
                 >
-                  <History className="h-4 w-4 mr-2" />
-                  Histórico
+                  <Eye className="h-4 w-4 mr-2" />
+                  Ver Detalhes Completos
                 </Button>
-              </div>
               
               <div className="flex items-center space-x-2">
                 <Button
@@ -300,6 +445,7 @@ export function ManagerApprovalPanel({ currentUser }: ManagerApprovalPanelProps)
       </CardContent>
     </Card>
   )
+  }
 
   if (isLoading) {
     return (
@@ -374,14 +520,29 @@ export function ManagerApprovalPanel({ currentUser }: ManagerApprovalPanelProps)
       {/* Abas */}
       <Tabs defaultValue="pending" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="pending">
+          <TabsTrigger value="pending" className="flex items-center gap-2">
             Aguardando Aprovação ({pendingSubtasks.length})
+            {getSubtasksWithUnreadComments(pendingSubtasks) > 0 && (
+              <Badge variant="default" className="bg-purple-600 text-white text-xs">
+                💬 {getSubtasksWithUnreadComments(pendingSubtasks)}
+              </Badge>
+            )}
           </TabsTrigger>
-          <TabsTrigger value="blocked">
+          <TabsTrigger value="blocked" className="flex items-center gap-2">
             Bloqueadas ({blockedSubtasks.length})
+            {getSubtasksWithUnreadComments(blockedSubtasks) > 0 && (
+              <Badge variant="default" className="bg-purple-600 text-white text-xs">
+                💬 {getSubtasksWithUnreadComments(blockedSubtasks)}
+              </Badge>
+            )}
           </TabsTrigger>
-          <TabsTrigger value="all">
+          <TabsTrigger value="all" className="flex items-center gap-2">
             Todas as Subtarefas ({allSubtasks.length})
+            {getOtherSubtasksWithUnreadComments() > 0 && (
+              <Badge variant="default" className="bg-purple-600 text-white text-xs">
+                💬 {getOtherSubtasksWithUnreadComments()}
+              </Badge>
+            )}
           </TabsTrigger>
         </TabsList>
 
@@ -400,9 +561,38 @@ export function ManagerApprovalPanel({ currentUser }: ManagerApprovalPanelProps)
             </Card>
           ) : (
             <div className="space-y-4">
-              {pendingSubtasks.map((subtask: any) => (
+              {pendingSubtasks
+                .sort((a: any, b: any) => {
+                  // Calcular se tem comentários não lidos
+                  const aHasUnread = a.comments?.some((comment: any) => {
+                    if (comment.authorId === currentUser.id) return false
+                    try {
+                      const readBy = comment.readBy ? JSON.parse(comment.readBy) : []
+                      return !readBy.includes(currentUser.id)
+                    } catch {
+                      return true
+                    }
+                  }) || false
+                  
+                  const bHasUnread = b.comments?.some((comment: any) => {
+                    if (comment.authorId === currentUser.id) return false
+                    try {
+                      const readBy = comment.readBy ? JSON.parse(comment.readBy) : []
+                      return !readBy.includes(currentUser.id)
+                    } catch {
+                      return true
+                    }
+                  }) || false
+                  
+                  // Tarefas com comentários não lidos no topo
+                  if (aHasUnread && !bHasUnread) return -1
+                  if (!aHasUnread && bHasUnread) return 1
+                  return 0
+                })
+                .map((subtask: any) => (
                 <SubtaskCard key={subtask.id} subtask={subtask} />
-              ))}
+                ))
+              }
             </div>
           )}
         </TabsContent>
@@ -422,22 +612,82 @@ export function ManagerApprovalPanel({ currentUser }: ManagerApprovalPanelProps)
             </Card>
           ) : (
             <div className="space-y-4">
-              {blockedSubtasks.map((subtask: any) => (
+              {blockedSubtasks
+                .sort((a: any, b: any) => {
+                  // Calcular se tem comentários não lidos
+                  const aHasUnread = a.comments?.some((comment: any) => {
+                    if (comment.authorId === currentUser.id) return false
+                    try {
+                      const readBy = comment.readBy ? JSON.parse(comment.readBy) : []
+                      return !readBy.includes(currentUser.id)
+                    } catch {
+                      return true
+                    }
+                  }) || false
+                  
+                  const bHasUnread = b.comments?.some((comment: any) => {
+                    if (comment.authorId === currentUser.id) return false
+                    try {
+                      const readBy = comment.readBy ? JSON.parse(comment.readBy) : []
+                      return !readBy.includes(currentUser.id)
+                    } catch {
+                      return true
+                    }
+                  }) || false
+                  
+                  // Tarefas com comentários não lidos no topo
+                  if (aHasUnread && !bHasUnread) return -1
+                  if (!aHasUnread && bHasUnread) return 1
+                  return 0
+                })
+                .map((subtask: any) => (
                 <SubtaskCard key={subtask.id} subtask={subtask} showActions={false} />
-              ))}
+                ))
+              }
             </div>
           )}
         </TabsContent>
 
         <TabsContent value="all">
           <div className="space-y-4">
-            {allSubtasks.map((subtask: any) => (
+            {allSubtasks
+              .sort((a: any, b: any) => {
+                // Calcular se tem comentários não lidos em cada subtarefa
+                const aHasUnread = a.comments?.some((comment: any) => {
+                  if (comment.authorId === currentUser.id) return false
+                  try {
+                    const readBy = comment.readBy ? JSON.parse(comment.readBy) : []
+                    return !readBy.includes(currentUser.id)
+                  } catch {
+                    return true
+                  }
+                }) || false
+                
+                const bHasUnread = b.comments?.some((comment: any) => {
+                  if (comment.authorId === currentUser.id) return false
+                  try {
+                    const readBy = comment.readBy ? JSON.parse(comment.readBy) : []
+                    return !readBy.includes(currentUser.id)
+                  } catch {
+                    return true
+                  }
+                }) || false
+                
+                // Tarefas com comentários não lidos no topo
+                if (aHasUnread && !bHasUnread) return -1
+                if (!aHasUnread && bHasUnread) return 1
+                
+                // Se ambas têm ou ambas não têm, manter ordem original (por data)
+                return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+              })
+              .map((subtask: any) => (
               <SubtaskCard 
                 key={subtask.id} 
                 subtask={subtask} 
                 showActions={subtask.status === SubtaskStatus.COMPLETED_PENDING}
               />
-            ))}
+              ))
+            }
           </div>
         </TabsContent>
       </Tabs>
@@ -540,6 +790,20 @@ export function ManagerApprovalPanel({ currentUser }: ManagerApprovalPanelProps)
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Modal de Detalhes Completo da Subtarefa */}
+      {detailsModal.subtask && (
+        <SubtaskDetailsModal
+          isOpen={detailsModal.isOpen}
+          onClose={() => {
+            setDetailsModal({ isOpen: false, subtask: null, mainTaskId: '' })
+            utils.mainTask.getAll.invalidate()
+          }}
+          subtask={detailsModal.subtask}
+          mainTaskId={detailsModal.mainTaskId}
+          initialTab={detailsModal.subtask.initialTab || 'details'}
+        />
+      )}
     </div>
   )
 }

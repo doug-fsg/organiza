@@ -238,10 +238,27 @@ model Comment {
   readBy    String?  // JSON array de user IDs que já leram
 
   // Relations
-  subtask Subtask @relation(fields: [subtaskId], references: [id], onDelete: Cascade)
-  author  User    @relation(fields: [authorId], references: [id])
+  subtask     Subtask              @relation(fields: [subtaskId], references: [id], onDelete: Cascade)
+  author      User                 @relation(fields: [authorId], references: [id])
+  attachments CommentAttachment[]
 
   @@map("comments")
+}
+
+model CommentAttachment {
+  id           String   @id @default(cuid())
+  commentId    String
+  fileName     String   // Nome original do arquivo
+  fileSize     Int      // Tamanho em bytes
+  mimeType     String   // tipo MIME (image/png, application/pdf, etc)
+  filePath     String   // Caminho no servidor
+  uploadedAt   DateTime @default(now())
+  uploadedBy   String   // ID do usuário que fez upload
+
+  // Relations
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@map("comment_attachments")
 }
 
 model Notification {

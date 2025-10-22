@@ -68,7 +68,8 @@ export function TaskCalendar({ currentUser }: TaskCalendarProps) {
   // Buscar tarefas baseado no papel do usuário (com auto-refetch)
   const { data: allSubtasks, isLoading } = api.subtask.getByUser.useQuery({
     userId: currentUser.id,
-    userRole: currentUser.role as any
+    userRole: currentUser.role as any,
+    showAllTasks: true // Calendário sempre mostra todas as tarefas para ADMIN/MANAGER
   }, {
     refetchInterval: 10000, // Atualiza a cada 10 segundos no calendário
     refetchIntervalInBackground: true,
@@ -103,6 +104,44 @@ export function TaskCalendar({ currentUser }: TaskCalendarProps) {
     // Tarefas com deadline específico
     if (task.deadline && isSameDay(new Date(task.deadline), date)) {
       return true
+    }
+
+    // Tarefas "Aguardando Aprovação" aparecem apenas:
+    // 1. No deadline (se tiver)
+    // 2. Na data de conclusão (se tiver)
+    // 3. Na data atual (hoje)
+    if (task.status === 'COMPLETED_PENDING') {
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const checkDate = new Date(date)
+      checkDate.setHours(0, 0, 0, 0)
+      
+      // Mostrar na data atual
+      if (isSameDay(checkDate, today)) {
+        return true
+      }
+      
+      // Mostrar na data de conclusão se tiver
+      if (task.completedAt && isSameDay(new Date(task.completedAt), date)) {
+        return true
+      }
+      
+      return false
+    }
+
+    // Tarefas aprovadas aparecem apenas na data de conclusão ou deadline
+    if (task.status === 'APPROVED') {
+      // Se tem deadline, mostrar no deadline
+      if (task.deadline && isSameDay(new Date(task.deadline), date)) {
+        return true
+      }
+      
+      // Se tem data de conclusão, mostrar na data de conclusão
+      if (task.completedAt && isSameDay(new Date(task.completedAt), date)) {
+        return true
+      }
+      
+      return false
     }
 
     // Tarefas recorrentes
@@ -208,6 +247,11 @@ export function TaskCalendar({ currentUser }: TaskCalendarProps) {
       return true
     }
     
+    // Se a tarefa está aguardando aprovação, ela é considerada concluída
+    if (task.status === 'COMPLETED_PENDING') {
+      return true
+    }
+    
     // Se tem data de conclusão, verificar se foi concluída nessa data
     if (task.completedAt) {
       return isSameDay(new Date(task.completedAt), date)
@@ -237,6 +281,11 @@ export function TaskCalendar({ currentUser }: TaskCalendarProps) {
   // Função para obter o status de uma tarefa em uma data específica
   const getTaskStatusOnDate = (task: TaskForCalendar, date: Date) => {
     if (!date) return 'pending'
+    
+    // Tarefas "Aguardando Aprovação" têm status especial
+    if (task.status === 'COMPLETED_PENDING') {
+      return 'pending-approval'
+    }
     
     if (isTaskCompletedOnDate(task, date)) {
       return 'completed'
@@ -385,6 +434,8 @@ export function TaskCalendar({ currentUser }: TaskCalendarProps) {
                   ? 'bg-green-100 text-green-800' 
                   : status === 'overdue'
                   ? 'bg-red-100 text-red-800'
+                  : status === 'pending-approval'
+                  ? 'bg-orange-100 text-orange-800'
                   : 'bg-yellow-100 text-yellow-800'
               )}
               title={`${task.title} - ${task.mainTask.title} (clique para ver detalhes)`}
@@ -392,6 +443,7 @@ export function TaskCalendar({ currentUser }: TaskCalendarProps) {
             >
               {status === 'completed' && <CheckCircle2 className="h-3 w-3 flex-shrink-0" />}
               {status === 'overdue' && <XCircle className="h-3 w-3 flex-shrink-0" />}
+              {status === 'pending-approval' && <Clock className="h-3 w-3 flex-shrink-0" />}
               {status === 'pending' && <Clock className="h-3 w-3 flex-shrink-0" />}
               {task.isRecurring && <RotateCcw className="h-3 w-3 flex-shrink-0" />}
               <span className="truncate">{task.title}</span>
@@ -526,6 +578,10 @@ export function TaskCalendar({ currentUser }: TaskCalendarProps) {
                   <span>Atrasada</span>
                 </div>
                 <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 bg-orange-100 rounded"></div>
+                  <span>Aguardando Aprovação</span>
+                </div>
+                <div className="flex items-center gap-2">
                   <div className="w-3 h-3 bg-yellow-100 rounded"></div>
                   <span>Pendente</span>
                 </div>
@@ -631,6 +687,7 @@ export function TaskCalendar({ currentUser }: TaskCalendarProps) {
                           <div className="flex items-center gap-3">
                             {status === 'completed' && <CheckCircle2 className="h-5 w-5 text-green-600" />}
                             {status === 'overdue' && <XCircle className="h-5 w-5 text-red-600" />}
+                            {status === 'pending-approval' && <Clock className="h-5 w-5 text-orange-600" />}
                             {status === 'pending' && <Clock className="h-5 w-5 text-yellow-600" />}
                             {task.isRecurring && <RotateCcw className="h-5 w-5 text-blue-600" />}
                             <div>
@@ -647,9 +704,20 @@ export function TaskCalendar({ currentUser }: TaskCalendarProps) {
                           </div>
                           <div className="flex items-center gap-2">
                             <Badge
-                              variant={status === 'completed' ? 'default' : status === 'overdue' ? 'destructive' : 'secondary'}
+                              variant={
+                                status === 'completed' ? 'default' : 
+                                status === 'overdue' ? 'destructive' : 
+                                status === 'pending-approval' ? 'secondary' : 
+                                'secondary'
+                              }
+                              className={
+                                status === 'pending-approval' ? 'bg-orange-100 text-orange-800 hover:bg-orange-200' : ''
+                              }
                             >
-                              {status === 'completed' ? 'Concluída' : status === 'overdue' ? 'Atrasada' : 'Pendente'}
+                              {status === 'completed' ? 'Concluída' : 
+                               status === 'overdue' ? 'Atrasada' : 
+                               status === 'pending-approval' ? 'Aguardando Aprovação' : 
+                               'Pendente'}
                             </Badge>
                           </div>
                         </div>

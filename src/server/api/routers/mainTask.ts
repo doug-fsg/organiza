@@ -54,6 +54,12 @@ export const mainTaskRouter = createTRPCRouter({
           subtasks: {
             include: {
               assignedTo: true,
+              comments: {
+                include: {
+                  author: true,
+                },
+                orderBy: { createdAt: 'desc' },
+              },
               dependencies: {
                 include: {
                   blocking: {

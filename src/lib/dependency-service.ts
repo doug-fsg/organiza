@@ -288,14 +288,36 @@ export class DependencyService {
     rejectorId: string, 
     reason: string
   ): Promise<{ success: boolean; message: string }> {
+    // Buscar informações do rejeitador
+    const rejector = await prisma.user.findUnique({
+      where: { id: rejectorId },
+      select: { name: true }
+    })
+
+    // Voltar status para TODO para o usuário refazer
     await prisma.subtask.update({
       where: { id: subtaskId },
       data: { 
-        status: SubtaskStatus.REJECTED,
+        status: SubtaskStatus.TODO,
         rejectedAt: new Date(),
         rejectedBy: rejectorId,
         rejectionReason: reason,
+        completedAt: null, // Limpar data de conclusão
         updatedAt: new Date()
+      }
+    })
+
+    // Criar comentário especial de reprovação (tipo sistema)
+    await prisma.comment.create({
+      data: {
+        content: JSON.stringify({
+          type: 'rejection',
+          reason: reason,
+          rejectorName: rejector?.name || 'Gestor'
+        }),
+        subtaskId: subtaskId,
+        authorId: rejectorId,
+        readBy: JSON.stringify([rejectorId]), // Rejeitador já leu
       }
     })
 
@@ -309,7 +331,7 @@ export class DependencyService {
 
     return {
       success: true,
-      message: 'Subtarefa reprovada. O responsável foi notificado.'
+      message: 'Subtarefa reprovada. O responsável foi notificado e a tarefa voltou para refazer.'
     }
   }
 

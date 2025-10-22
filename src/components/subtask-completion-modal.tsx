@@ -14,16 +14,27 @@ import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
+import { Textarea } from '@/components/ui/textarea'
 import { 
   AlertTriangle, 
   CheckCircle2, 
   Clock, 
   Lock, 
   User,
-  Info
+  Info,
+  Paperclip,
+  X
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import toast from 'react-hot-toast'
+import { AttachmentPreview } from './attachment-preview'
+
+interface UploadedFile {
+  fileName: string
+  fileSize: number
+  filePath: string
+  mimeType: string
+}
 
 interface SubtaskCompletionModalProps {
   isOpen: boolean
@@ -44,6 +55,8 @@ export function SubtaskCompletionModal({
 }: SubtaskCompletionModalProps) {
   const [isConfirming, setIsConfirming] = useState(false)
   const [showDependencies, setShowDependencies] = useState(false)
+  const [completionComment, setCompletionComment] = useState('')
+  const [pendingAttachments, setPendingAttachments] = useState<UploadedFile[]>([])
 
   // Query para verificar dependências
   const { data: dependencyCheck, isLoading } = api.subtask.checkDependencies.useQuery(
@@ -54,33 +67,118 @@ export function SubtaskCompletionModal({
     }
   )
 
-  // Mutation para concluir a subtarefa
-  const completeSubtask = api.subtask.completeSubtask.useMutation({
-    onSuccess: (result) => {
+  // Mutations
+  const completeSubtask = api.subtask.completeSubtask.useMutation()
+  const createComment = api.comment.create.useMutation()
+  const createAttachments = api.attachment.createMany.useMutation()
+
+  const handleCompleteSubtask = async () => {
+    setIsConfirming(true)
+    
+    try {
+      // 1. Concluir a subtarefa
+      const result = await completeSubtask.mutateAsync({
+        id: subtaskId,
+        userId
+      })
+
       if (result.success) {
+        // 2. Criar comentário de conclusão (se houver texto ou anexos)
+        if (completionComment.trim() || pendingAttachments.length > 0) {
+          const comment = await createComment.mutateAsync({
+            subtaskId,
+            content: completionComment.trim() || 'Tarefa concluída',
+            authorId: userId
+          })
+
+          // 3. Criar anexos (se houver)
+          if (pendingAttachments.length > 0) {
+            await createAttachments.mutateAsync({
+              commentId: comment.id,
+              attachments: pendingAttachments.map(file => ({
+                fileName: file.fileName,
+                fileSize: file.fileSize,
+                mimeType: file.mimeType,
+                filePath: file.filePath,
+                uploadedBy: userId
+              }))
+            })
+          }
+        }
+
+        // 4. Mostrar mensagem de sucesso
         if (result.newStatus === SubtaskStatus.COMPLETED_PENDING) {
           toast.success('Tarefa concluída com sucesso!')
         } else if (result.newStatus === SubtaskStatus.BLOCKED) {
           toast.success('⏸️ Subtarefa marcada como bloqueada por dependências pendentes.')
         }
+        
         onSuccess()
         onOpenChange(false)
       }
-    },
-    onError: (error) => {
+    } catch (error: any) {
       toast.error(`Erro ao concluir subtarefa: ${error.message}`)
-    },
-    onSettled: () => {
+    } finally {
       setIsConfirming(false)
     }
-  })
+  }
 
-  const handleConfirm = () => {
-    setIsConfirming(true)
-    completeSubtask.mutate({
-      id: subtaskId,
-      userId
-    })
+  // Função para upload de arquivos
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files
+    if (!files || files.length === 0) return
+
+    const fileArray = Array.from(files)
+    
+    // Validar quantidade de arquivos
+    if (pendingAttachments.length + fileArray.length > 10) {
+      toast.error('Máximo de 10 arquivos por comentário')
+      return
+    }
+
+    // Validar tamanho dos arquivos
+    const maxSize = 200 * 1024 * 1024 // 200MB
+    for (const file of fileArray) {
+      if (file.size > maxSize) {
+        toast.error(`Arquivo ${file.name} excede o limite de 200MB`)
+        return
+      }
+    }
+
+    try {
+      const formData = new FormData()
+      fileArray.forEach(file => {
+        formData.append('files', file)
+      })
+
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) {
+        throw new Error('Erro no upload')
+      }
+
+      const result = await response.json()
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Erro no upload')
+      }
+      
+      setPendingAttachments(prev => [...prev, ...result.files])
+      toast.success(`${fileArray.length} arquivo(s) carregado(s) com sucesso`)
+    } catch (error) {
+      toast.error('Erro ao fazer upload dos arquivos')
+    }
+
+    // Limpar input
+    event.target.value = ''
+  }
+
+  // Função para remover anexo pendente
+  const removePendingAttachment = (index: number) => {
+    setPendingAttachments(prev => prev.filter((_, i) => i !== index))
   }
 
   const getStatusBadge = (status: SubtaskStatus, assignedTo?: string) => {
@@ -131,6 +229,79 @@ export function SubtaskCompletionModal({
               Esta ação é irreversível.
             </AlertDescription>
           </Alert>
+
+          {/* Comentário de conclusão */}
+          <div className="space-y-3">
+            <div>
+              <label className="text-sm font-medium">Comentário de conclusão (opcional)</label>
+              <Textarea
+                value={completionComment}
+                onChange={(e) => setCompletionComment(e.target.value)}
+                placeholder="Descreva o que foi realizado, observações importantes, ou deixe em branco..."
+                rows={3}
+                className="mt-1"
+              />
+            </div>
+
+            {/* Upload de anexos */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Anexos (opcional)</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="file"
+                  id="completion-attachments"
+                  multiple
+                  onChange={handleFileSelect}
+                  className="hidden"
+                  accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.rar"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => document.getElementById('completion-attachments')?.click()}
+                  className="flex items-center gap-2"
+                >
+                  <Paperclip className="h-4 w-4" />
+                  Anexar arquivos
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  Máx. 10 arquivos, 200MB cada
+                </span>
+              </div>
+
+              {/* Preview dos anexos pendentes */}
+              {pendingAttachments.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-xs font-medium text-muted-foreground">
+                    Anexos ({pendingAttachments.length}):
+                  </div>
+                  <div className="space-y-1">
+                    {pendingAttachments.map((file, index) => (
+                      <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded border">
+                        <div className="flex items-center gap-2">
+                          <Paperclip className="h-3 w-3 text-gray-500" />
+                          <span className="text-xs text-gray-700">{file.fileName}</span>
+                          <span className="text-xs text-gray-500">
+                            ({(file.fileSize / 1024 / 1024).toFixed(1)}MB)
+                          </span>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removePendingAttachment(index)}
+                          className="h-6 w-6 p-0 text-gray-500 hover:text-red-600"
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
 
           {/* Verificação de dependências */}
           {isLoading ? (
@@ -219,7 +390,7 @@ export function SubtaskCompletionModal({
             Cancelar
           </Button>
           <Button 
-            onClick={handleConfirm} 
+            onClick={handleCompleteSubtask} 
             disabled={isConfirming || isLoading}
             className="bg-primary hover:bg-primary/90"
           >

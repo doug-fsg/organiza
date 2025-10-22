@@ -13,7 +13,7 @@ export function useNotifications(userId: string) {
     { userId, read: false },
     { 
       enabled: isEnabled,
-      refetchInterval: 5000, // Polling a cada 5 segundos
+      refetchInterval: 15000, // Reduzido para 15 segundos
     }
   )
 
@@ -28,7 +28,7 @@ export function useNotifications(userId: string) {
     { userId },
     { 
       enabled: isEnabled,
-      refetchInterval: 5000,
+      refetchInterval: 15000, // Reduzido para 15 segundos
     }
   )
 

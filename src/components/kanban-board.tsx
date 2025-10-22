@@ -89,7 +89,7 @@ function DroppableColumn({
 function DraggableSubtaskCard({ subtask, onStatusChange, onOpenDetails, onComplete }: {
   subtask: any,
   onStatusChange: (subtaskId: string, newStatus: SubtaskStatus) => void,
-  onOpenDetails: (subtask: any) => void,
+  onOpenDetails: (subtask: any, tab?: 'details' | 'comments' | 'checklist') => void,
   onComplete?: (subtask: any) => void
 }) {
   const {
@@ -133,7 +133,7 @@ function DraggableSubtaskCard({ subtask, onStatusChange, onOpenDetails, onComple
 function SubtaskCardContent({ subtask, onStatusChange, onOpenDetails, onComplete }: {
   subtask: any,
   onStatusChange: (subtaskId: string, newStatus: SubtaskStatus) => void,
-  onOpenDetails: (subtask: any) => void,
+  onOpenDetails: (subtask: any, tab?: 'details' | 'comments' | 'checklist') => void,
   onComplete?: (subtask: any) => void
 }) {
   const getPriorityColor = (priority: Priority) => {
@@ -353,7 +353,11 @@ function SubtaskCardContent({ subtask, onStatusChange, onOpenDetails, onComplete
               <button
                 onClick={(e) => {
                   e.stopPropagation()
-                  onOpenDetails(subtask, 'comments')
+                  if (onOpenDetails.length > 1) {
+                    onOpenDetails(subtask, 'comments')
+                  } else {
+                    onOpenDetails(subtask)
+                  }
                 }}
                 className="relative group cursor-pointer"
                 title={hasUnread 
@@ -457,8 +461,8 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
   const { data: subtasks, isLoading } = api.subtask.getByUser.useQuery({
     userRole: userRole as any,
   }, {
-    refetchInterval: 5000, // Atualiza a cada 5 segundos
-    refetchIntervalInBackground: true, // Continua atualizando mesmo em background
+    refetchInterval: 15000, // Reduzido para 15 segundos
+    refetchIntervalInBackground: false, // Só atualiza quando componente visível
   })
 
   // Detectar novos comentários não lidos e tocar som
@@ -475,17 +479,34 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
         }
       }).length || 0
 
-      const previousCount = previousUnreadCountRef.current[subtask.id] || 0
+      const previousCount = previousUnreadCountRef.current[subtask.id]
 
       // Se aumentou o número de não lidos, tocar som
-      if (unreadCount > previousCount && previousCount > 0) {
+      // Toca desde o primeiro comentário (previousCount pode ser undefined ou menor)
+      // MAS NÃO toca se o modal desta subtarefa estiver aberto
+      const isModalOpenForThisSubtask = isDetailsModalOpen && selectedSubtask?.id === subtask.id
+      
+      if (previousCount !== undefined && unreadCount > previousCount && !isModalOpenForThisSubtask) {
         playNotificationSound()
+        
+        // Mensagem específica se for tarefa aguardando aprovação
+        if (subtask.status === SubtaskStatus.COMPLETED_PENDING) {
+          toast('Novo comentário', {
+            icon: '💬',
+            duration: 4000,
+          })
+        } else {
+          toast('Novo comentário em sua tarefa', {
+            icon: '💬',
+            duration: 3000,
+          })
+        }
       }
 
       // Atualizar contagem anterior
       previousUnreadCountRef.current[subtask.id] = unreadCount
     })
-  }, [subtasks, playNotificationSound])
+  }, [subtasks, playNotificationSound, isDetailsModalOpen, selectedSubtask])
   
   const updateSubtask = api.subtask.update.useMutation({
     onSuccess: (updatedSubtask) => {
@@ -677,6 +698,23 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
     )
   }
 
+  // Calcular total de mensagens não lidas em tarefas aguardando aprovação
+  const totalUnreadMessagesInWaiting = subtasks?.reduce((total, s) => {
+    if (s.status !== SubtaskStatus.COMPLETED_PENDING) return total
+    
+    const unreadCount = s.comments?.filter((comment: any) => {
+      if (comment.authorId === userId) return false
+      try {
+        const readBy = comment.readBy ? JSON.parse(comment.readBy) : []
+        return !readBy.includes(userId)
+      } catch {
+        return true
+      }
+    }).length || 0
+    
+    return total + unreadCount
+  }, 0) || 0
+
   return (
     <div className="space-y-6">
       {/* Tabs com contadores */}
@@ -698,13 +736,20 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="waiting" className="flex items-center gap-2">
+          <TabsTrigger value="waiting" className="flex items-center gap-2 relative">
             Aguardando
-            {tabCounts.waiting > 0 && (
-              <Badge variant="outline" className="ml-1 bg-yellow-100 text-yellow-800">
-                {tabCounts.waiting}
-              </Badge>
-            )}
+            <div className="flex items-center gap-1">
+              {tabCounts.waiting > 0 && (
+                <Badge variant="outline" className="bg-yellow-100 text-yellow-800">
+                  {tabCounts.waiting}
+                </Badge>
+              )}
+              {totalUnreadMessagesInWaiting > 0 && (
+                <Badge variant="default" className="bg-purple-600 text-white animate-pulse">
+                  💬 {totalUnreadMessagesInWaiting}
+                </Badge>
+              )}
+            </div>
           </TabsTrigger>
           <TabsTrigger value="approved" className="flex items-center gap-2">
             Aprovadas
@@ -938,49 +983,89 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {getTabSubtasks().map((subtask) => (
-                    <TableRow key={subtask.id}>
-                      <TableCell>
-                        <div>
-                          <p className="font-medium">{subtask.title}</p>
-                          {subtask.description && (
-                            <p className="text-sm text-muted-foreground">{subtask.description}</p>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>{subtask.mainTask.title}</TableCell>
-                      <TableCell>
-                        {subtask.completedAt ? 
-                          new Date(subtask.completedAt).toLocaleString('pt-BR') : 
-                          'Não informado'
-                        }
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="bg-yellow-100 text-yellow-800">
-                          Aguardando
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleOpenDetails(subtask)}
-                                className="h-8 w-8 p-0 hover:bg-muted"
-                              >
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p className="text-xs">Ver detalhes</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {getTabSubtasks().map((subtask) => {
+                    // Calcular comentários não lidos
+                    const unreadComments = subtask.comments?.filter((comment: any) => {
+                      if (comment.authorId === userId) return false // Não contar próprios comentários
+                      try {
+                        const readBy = comment.readBy ? JSON.parse(comment.readBy) : []
+                        return !readBy.includes(userId)
+                      } catch {
+                        return true
+                      }
+                    }).length || 0
+                    
+                    const hasUnreadComments = unreadComments > 0
+                    const totalComments = subtask.comments?.length || 0
+
+                    return (
+                      <TableRow key={subtask.id} className={hasUnreadComments ? 'bg-purple-50/20' : ''}>
+                        <TableCell>
+                          <div className="flex items-start gap-2">
+                            <div className="flex-1">
+                              <p className="font-medium">{subtask.title}</p>
+                              {subtask.description && (
+                                <p className="text-sm text-muted-foreground">{subtask.description}</p>
+                              )}
+                              {totalComments > 0 && (
+                                <button
+                                  onClick={() => {
+                                    setSelectedSubtask(subtask)
+                                    setInitialModalTab('comments')
+                                    setIsDetailsModalOpen(true)
+                                  }}
+                                  className={`mt-1 flex items-center gap-1 text-xs transition-all hover:underline ${
+                                    hasUnreadComments 
+                                      ? 'text-purple-600 font-semibold hover:text-purple-700' 
+                                      : 'text-gray-500 hover:text-gray-700'
+                                  }`}
+                                >
+                                  <MessageSquare className={`h-3 w-3 ${hasUnreadComments ? 'fill-purple-600' : ''}`} />
+                                  <span>{totalComments} comentário{totalComments !== 1 ? 's' : ''}</span>
+                                  {hasUnreadComments && (
+                                    <Badge variant="default" className="ml-1 bg-purple-600 text-white text-[10px] px-1 py-0 h-4 animate-pulse">
+                                      {unreadComments} novo{unreadComments !== 1 ? 's' : ''}
+                                    </Badge>
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>{subtask.mainTask.title}</TableCell>
+                        <TableCell>
+                          {subtask.completedAt ? 
+                            new Date(subtask.completedAt).toLocaleString('pt-BR') : 
+                            'Não informado'
+                          }
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="bg-yellow-100 text-yellow-800">
+                            Aguardando
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleOpenDetails(subtask)}
+                                  className="h-8 w-8 p-0 hover:bg-muted"
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p className="text-xs">Ver detalhes</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
                   {getTabSubtasks().length === 0 && (
                     <TableRow>
                       <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
