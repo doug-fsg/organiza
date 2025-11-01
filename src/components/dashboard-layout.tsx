@@ -7,7 +7,7 @@ import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/s
 import { TaskManagement } from '@/components/task-management'
 import { TaskCalendar } from '@/components/task-calendar'
 import { AppSidebar } from '@/components/app-sidebar'
-import { ManagerApprovalPanel } from '@/components/manager-approval-panel'
+import { TasksCentralPanel } from '@/components/manager-approval-panel'
 import { KanbanBoard } from '@/components/kanban-board'
 import { UserManagement } from '@/components/user-management'
 import { api } from '@/lib/api'
@@ -82,7 +82,7 @@ export function DashboardLayout({ user, onLogout }: DashboardLayoutProps) {
       case 'calendar':
         return <TaskCalendar currentUser={user} />
       case 'approvals':
-        return canManageTasks ? <ManagerApprovalPanel currentUser={user} /> : null
+        return canManageTasks ? <TasksCentralPanel currentUser={user} /> : null
       case 'settings':
         return (
           <Card>

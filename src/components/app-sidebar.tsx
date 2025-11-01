@@ -107,11 +107,11 @@ export function AppSidebar({
       description: "Visualizar e gerenciar suas tarefas"
     },
     {
-      title: "Aprovações",
+      title: "Central de Tarefas",
       icon: CheckCircle2,
       value: "approvals",
       isVisible: canManageTasks,
-      description: "Gerenciar aprovações de subtarefas"
+      description: "Visualizar e gerenciar todas as tarefas"
     },
   ]
 
@@ -128,7 +128,7 @@ export function AppSidebar({
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-semibold">Organiza</span>
-                <span className="truncate text-xs">Sistema de Tarefas</span>
+                <span className="truncate text-xs">Produtividade que se vê</span>
               </div>
             </SidebarMenuButton>
           </SidebarMenuItem>

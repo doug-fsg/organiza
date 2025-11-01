@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { SubtaskStatus, Priority } from '@prisma/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -27,6 +27,7 @@ import {
   SortableContext,
   useSortable,
   verticalListSortingStrategy,
+  arrayMove,
 } from '@dnd-kit/sortable'
 import {
   useDroppable,
@@ -63,7 +64,13 @@ function DroppableColumn({
 
   return (
     <div className="flex flex-col h-full">
-      <Card className={`${color} border-2 flex-1 h-full ${isOver ? 'ring-2 ring-blue-500 ring-opacity-50' : ''}`}>
+      <Card 
+        className={`${color} border-2 flex-1 h-full transition-all duration-200 ease-in-out ${
+          isOver 
+            ? 'ring-2 ring-blue-500 ring-opacity-70 bg-blue-50/30 scale-[1.02] shadow-lg' 
+            : ''
+        }`}
+      >
         <div className="px-7 py-1">
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm">{title}</CardTitle>
@@ -73,7 +80,9 @@ function DroppableColumn({
           </div>
         </div>
         <CardContent 
-          className="flex-1 min-h-32 pt-0 px-3 pb-2" 
+          className={`flex-1 min-h-32 pt-0 px-3 pb-2 transition-all duration-200 ${
+            isOver ? 'bg-blue-50/20' : ''
+          }`}
           ref={setNodeRef}
         >
           <div className="h-full w-full">
@@ -103,38 +112,56 @@ function DraggableSubtaskCard({ subtask, onStatusChange, onOpenDetails, onComple
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
+    transition: isDragging ? 'none' : transition || 'transform 200ms cubic-bezier(0.4, 0, 0.2, 1)',
+    opacity: isDragging ? 0.3 : 1,
+    willChange: isDragging ? 'transform' : 'auto',
   }
 
   return (
-    <Card
-      ref={setNodeRef}
-      style={style}
-      className={`bg-white shadow-sm hover:shadow-md transition-shadow cursor-grab ${
-        isDragging ? 'rotate-3 scale-105' : ''
-      }`}
-      {...attributes}
-      {...listeners}
-    >
-      <CardContent className="p-4">
-        <SubtaskCardContent 
-          subtask={subtask} 
-          onStatusChange={onStatusChange}
-          onOpenDetails={onOpenDetails}
-          onComplete={onComplete}
-        />
-      </CardContent>
-    </Card>
+    <>
+      <Card
+        ref={setNodeRef}
+        style={style}
+        className={`bg-white shadow-sm transition-all duration-200 ease-in-out cursor-grab active:cursor-grabbing ${
+          isDragging 
+            ? 'scale-95 opacity-30 shadow-none' 
+            : 'hover:shadow-md hover:scale-[1.02]'
+        }`}
+        {...attributes}
+        {...listeners}
+      >
+        <CardContent 
+          className="p-4"
+          style={{ pointerEvents: isDragging ? 'none' : 'auto' }}
+        >
+          <SubtaskCardContent 
+            subtask={subtask} 
+            onStatusChange={onStatusChange}
+            onOpenDetails={onOpenDetails}
+            onComplete={onComplete}
+            isDragging={isDragging}
+          />
+        </CardContent>
+      </Card>
+      {isDragging && (
+        <div 
+          className="border-2 border-dashed border-blue-300 bg-blue-50/30 rounded-lg h-32 flex items-center justify-center"
+          style={{ marginBottom: '0.75rem' }}
+        >
+          <p className="text-xs text-blue-600 font-medium">Soltar aqui</p>
+        </div>
+      )}
+    </>
   )
 }
 
 // Componente para o conteúdo do card (reutilizável)
-function SubtaskCardContent({ subtask, onStatusChange, onOpenDetails, onComplete }: {
+function SubtaskCardContent({ subtask, onStatusChange, onOpenDetails, onComplete, isDragging }: {
   subtask: any,
   onStatusChange: (subtaskId: string, newStatus: SubtaskStatus) => void,
   onOpenDetails: (subtask: any, tab?: 'details' | 'comments' | 'checklist') => void,
-  onComplete?: (subtask: any) => void
+  onComplete?: (subtask: any) => void,
+  isDragging?: boolean
 }) {
   const getPriorityColor = (priority: Priority) => {
     switch (priority) {
@@ -182,50 +209,54 @@ function SubtaskCardContent({ subtask, onStatusChange, onOpenDetails, onComplete
       <div className="space-y-2">
         <div className="flex items-start justify-between">
           <h4 
-            className="font-medium text-sm leading-tight flex-1 cursor-pointer hover:text-blue-600"
+            className={`font-medium text-sm leading-tight flex-1 ${isDragging ? 'cursor-grabbing' : 'cursor-pointer hover:text-blue-600'}`}
             onClick={(e) => {
+              if (isDragging) return
               e.stopPropagation()
               onOpenDetails(subtask)
             }}
+            style={{ pointerEvents: isDragging ? 'none' : 'auto' }}
           >
             {subtask.title}
           </h4>
-          <div className="flex items-center space-x-1">
+          <div className="flex items-center space-x-2" style={{ pointerEvents: isDragging ? 'none' : 'auto' }}>
             {/* Botão de Conclusão - só aparece em IN_PROGRESS */}
-            {subtask.status === SubtaskStatus.IN_PROGRESS && onComplete && (
+            {subtask.status === SubtaskStatus.IN_PROGRESS && onComplete && !isDragging && (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
-                      variant="ghost"
-                      size="sm"
                       onClick={(e) => {
                         e.stopPropagation()
                         onComplete(subtask)
                       }}
-                      className="h-6 w-6 p-0 hover:bg-green-100 hover:text-green-700 transition-all duration-200 group"
+                      className="h-7 px-3 bg-green-500 hover:bg-green-600 text-white font-medium text-xs shadow-sm hover:shadow-md transition-all duration-200 group flex items-center gap-1.5 rounded-md"
+                      disabled={isDragging}
                     >
-                      <CheckCircle2 className="h-4 w-4 group-hover:scale-110 transition-transform duration-200" />
+                      <CheckCircle2 className="h-3.5 w-3.5 group-hover:scale-110 transition-transform duration-200" />
+                      <span>Concluir</span>
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p className="text-xs font-medium">✅ Concluir tarefa</p>
+                    <p className="text-xs font-medium">Concluir tarefa</p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             )}
             
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation()
-                onOpenDetails(subtask)
-              }}
-              className="h-6 w-6 p-0"
-            >
-              <MoreHorizontal className="h-3 w-3" />
-            </Button>
+            {!isDragging && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onOpenDetails(subtask)
+                }}
+                className="h-6 w-6 p-0"
+              >
+                <MoreHorizontal className="h-3 w-3" />
+              </Button>
+            )}
             <GripVertical className="h-4 w-4 text-gray-400" />
           </div>
         </div>
@@ -352,6 +383,7 @@ function SubtaskCardContent({ subtask, onStatusChange, onOpenDetails, onComplete
             return (
               <button
                 onClick={(e) => {
+                  if (isDragging) return
                   e.stopPropagation()
                   if (onOpenDetails.length > 1) {
                     onOpenDetails(subtask, 'comments')
@@ -359,13 +391,15 @@ function SubtaskCardContent({ subtask, onStatusChange, onOpenDetails, onComplete
                     onOpenDetails(subtask)
                   }
                 }}
-                className="relative group cursor-pointer"
-                title={hasUnread 
+                className={`relative group ${isDragging ? 'cursor-grabbing' : 'cursor-pointer'}`}
+                title={!isDragging ? (hasUnread 
                   ? `${unreadComments.length} comentário${unreadComments.length > 1 ? 's' : ''} não lido${unreadComments.length > 1 ? 's' : ''}`
                   : totalComments > 0 
                     ? `${totalComments} comentário${totalComments > 1 ? 's' : ''}`
                     : 'Ver comentários'
-                }
+                ) : undefined}
+                disabled={isDragging}
+                style={{ pointerEvents: isDragging ? 'none' : 'auto' }}
               >
                 {/* Círculo de fundo ao hover */}
                 <div className="absolute inset-0 -m-1.5 rounded-full bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
@@ -509,13 +543,47 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
   }, [subtasks, playNotificationSound, isDetailsModalOpen, selectedSubtask])
   
   const updateSubtask = api.subtask.update.useMutation({
-    onSuccess: (updatedSubtask) => {
-      // Invalidar e refetch das queries relacionadas
-      utils.subtask.getByUser.invalidate({ userId })
-      toast.success('Tarefa atualizada com sucesso!')
+    onMutate: async (variables) => {
+      // Snapshot dos dados anteriores para rollback em caso de erro
+      const previousSubtasks = utils.subtask.getByUser.getData({ userRole: userRole as any })
+
+      // Atualização otimista: atualizar o cache imediatamente
+      if (previousSubtasks && variables.status) {
+        utils.subtask.getByUser.setData(
+          { userRole: userRole as any },
+          (old) => {
+            if (!old) return old
+            
+            // Atualizar o status da subtarefa no array
+            return old.map((subtask) =>
+              subtask.id === variables.id
+                ? { ...subtask, status: variables.status! }
+                : subtask
+            )
+          }
+        )
+      }
+
+      // Retornar contexto com os dados anteriores para rollback
+      return { previousSubtasks }
     },
-    onError: (error) => {
+    onError: (error, variables, context) => {
+      // Rollback: restaurar os dados anteriores em caso de erro
+      if (context?.previousSubtasks) {
+        utils.subtask.getByUser.setData(
+          { userRole: userRole as any },
+          context.previousSubtasks
+        )
+      }
       toast.error(`Erro ao atualizar tarefa: ${error.message}`)
+    },
+    onSuccess: () => {
+      // Não mostrar toast imediato, apenas sincronizar silenciosamente
+      // O usuário já viu a mudança otimista, então não precisa de feedback adicional
+    },
+    onSettled: () => {
+      // Invalidar e refetch apenas após sucesso/erro para garantir sincronização com o servidor
+      utils.subtask.getByUser.invalidate({ userRole: userRole as any })
     },
   })
 
@@ -527,11 +595,13 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
     })
   )
 
-  const getSubtasksByStatus = (status: SubtaskStatus) => {
-    return subtasks?.filter(subtask => subtask.status === status) || []
-  }
+  const getSubtasksByStatus = useMemo(() => {
+    return (status: SubtaskStatus) => {
+      return subtasks?.filter(subtask => subtask.status === status) || []
+    }
+  }, [subtasks])
 
-  const getTabCounts = () => {
+  const tabCounts = useMemo(() => {
     if (!subtasks) return { tasks: 0, pending: 0, waiting: 0, approved: 0 }
     
     return {
@@ -540,10 +610,10 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
       waiting: subtasks.filter(s => s.status === SubtaskStatus.COMPLETED_PENDING).length,
       approved: subtasks.filter(s => s.status === SubtaskStatus.APPROVED).length
     }
-  }
+  }, [subtasks])
 
-  const getTabSubtasks = () => {
-    if (!subtasks) return []
+  const getTabSubtasks = useMemo(() => {
+    if (!subtasks) return [] as any[]
     
     switch (activeTab) {
       case 'tasks':
@@ -557,9 +627,7 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
       default:
         return []
     }
-  }
-
-  const tabCounts = getTabCounts()
+  }, [subtasks, activeTab]) as any[]
 
   const handleStatusChange = (subtaskId: string, newStatus: SubtaskStatus) => {
     updateSubtask.mutate({
@@ -583,11 +651,33 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
     if (!over) return
 
     const subtaskId = active.id as string
+    const overId = over.id as string
+    
+    // Verificar se é uma subtarefa (para reordenação dentro da coluna)
+    const isOverSubtask = subtasks?.some(s => s.id === overId)
+    
+    // Se estiver arrastando sobre outra subtarefa na mesma coluna, fazer reordenação
+    if (isOverSubtask) {
+      const currentSubtask = subtasks?.find(s => s.id === subtaskId)
+      const overSubtask = subtasks?.find(s => s.id === overId)
+      
+      // Se estiver na mesma coluna (mesmo status), fazer reordenação
+      if (currentSubtask && overSubtask && currentSubtask.status === overSubtask.status) {
+        // Reordenação dentro da mesma coluna será tratada pelo optimistic update
+        // Por enquanto, apenas não fazer nada (o array já foi reordenado visualmente)
+        // Se no futuro quiser persistir a ordem, precisará adicionar campo "order" no schema
+        return
+      }
+    }
+
+    // Se não for sobre outra subtarefa, é sobre uma coluna (status)
     const newStatus = over.id as SubtaskStatus
 
     // Verificar se realmente mudou de status
     const currentSubtask = subtasks?.find(s => s.id === subtaskId)
-    if (currentSubtask?.status === newStatus) return
+    if (!currentSubtask) return
+    
+    if (currentSubtask.status === newStatus) return
 
     // Verificar se é um movimento válido
     const validStatuses = Object.values(SubtaskStatus)
@@ -847,16 +937,25 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
             </div>
 
             {/* Overlay do item sendo arrastado */}
-            <DragOverlay>
+            <DragOverlay
+              style={{
+                opacity: 0.95,
+              }}
+              dropAnimation={{
+                duration: 200,
+                easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+              }}
+            >
               {activeSubtask ? (
-                <Card className="bg-white shadow-lg rotate-3 scale-105">
-                  <CardContent className="p-4">
-                  <SubtaskCardContent 
-                    subtask={activeSubtask} 
-                    onStatusChange={handleStatusChange}
-                    onOpenDetails={handleOpenDetails}
-                    onComplete={handleCompleteTask}
-                  />
+                <Card className="bg-white shadow-2xl scale-110 border-2 border-blue-400 rotate-2">
+                  <CardContent className="p-4 pointer-events-none">
+                    <SubtaskCardContent 
+                      subtask={activeSubtask} 
+                      onStatusChange={handleStatusChange}
+                      onOpenDetails={handleOpenDetails}
+                      onComplete={handleCompleteTask}
+                      isDragging={true}
+                    />
                   </CardContent>
                 </Card>
               ) : null}
@@ -882,7 +981,7 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {getTabSubtasks().map((subtask) => (
+                  {getTabSubtasks.map((subtask) => (
                     <TableRow key={subtask.id}>
                       <TableCell>
                         <div>
@@ -952,7 +1051,7 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
                       </TableCell>
                     </TableRow>
                   ))}
-                  {getTabSubtasks().length === 0 && (
+                  {getTabSubtasks.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                         Nenhuma tarefa pendente
@@ -983,7 +1082,7 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {getTabSubtasks().map((subtask) => {
+                  {getTabSubtasks.map((subtask: any) => {
                     // Calcular comentários não lidos
                     const unreadComments = subtask.comments?.filter((comment: any) => {
                       if (comment.authorId === userId) return false // Não contar próprios comentários
@@ -1066,7 +1165,7 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
                       </TableRow>
                     )
                   })}
-                  {getTabSubtasks().length === 0 && (
+                  {getTabSubtasks.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                         Nenhuma tarefa aguardando aprovação
@@ -1097,7 +1196,7 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {getTabSubtasks().map((subtask) => (
+                  {getTabSubtasks.map((subtask) => (
                     <TableRow key={subtask.id}>
                       <TableCell>
                         <div>
@@ -1145,7 +1244,7 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
                       </TableCell>
                     </TableRow>
                   ))}
-                  {getTabSubtasks().length === 0 && (
+                  {getTabSubtasks.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                         Nenhuma tarefa aprovada
@@ -1178,7 +1277,7 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
          subtaskTitle={completionModal.subtaskTitle}
          userId={userId}
          onSuccess={() => {
-           utils.subtask.getByUser.invalidate({ userId })
+           utils.subtask.getByUser.invalidate({ userRole: userRole as any })
            setCompletionModal({ isOpen: false, subtaskId: '', subtaskTitle: '' })
          }}
        />

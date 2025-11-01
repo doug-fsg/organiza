@@ -1,13 +1,15 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { UserRole, SubtaskStatus, Priority } from '@prisma/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
 import {
   Dialog,
   DialogContent,
@@ -26,7 +28,8 @@ import {
   BarChart3,
   MessageSquare,
   History,
-  Eye
+  Eye,
+  Filter
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import toast from 'react-hot-toast'
@@ -39,11 +42,11 @@ interface User {
   role: UserRole
 }
 
-interface ManagerApprovalPanelProps {
+interface TasksCentralPanelProps {
   currentUser: User
 }
 
-export function ManagerApprovalPanel({ currentUser }: ManagerApprovalPanelProps) {
+export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
   const [selectedSubtask, setSelectedSubtask] = useState<any>(null)
   const [detailsModal, setDetailsModal] = useState({
     isOpen: false,
@@ -59,6 +62,13 @@ export function ManagerApprovalPanel({ currentUser }: ManagerApprovalPanelProps)
     isOpen: false,
     subtaskId: ''
   })
+  const [dateFilter, setDateFilter] = useState<'this_month' | 'last_month' | 'last_3_months' | 'all' | 'custom'>('this_month')
+  const [customDateStart, setCustomDateStart] = useState<string>('')
+  const [customDateEnd, setCustomDateEnd] = useState<string>('')
+  const [userFilter, setUserFilter] = useState<string>('all')
+  const [activeFilter, setActiveFilter] = useState<'all' | 'pending' | 'blocked' | 'approved'>('all')
+  const [currentPage, setCurrentPage] = useState(1)
+  const ITEMS_PER_PAGE = 10
 
   const utils = api.useUtils()
   const { playNotificationSound } = useNotificationSound()
@@ -71,6 +81,7 @@ export function ManagerApprovalPanel({ currentUser }: ManagerApprovalPanelProps)
     refetchInterval: 20000, // Reduzido para 20 segundos
     refetchIntervalInBackground: false, // Só atualiza quando componente visível
   })
+  const { data: users } = api.user.getAll.useQuery()
   const { data: history } = api.subtask.getHistory.useQuery(
     { id: historyModal.subtaskId },
     { enabled: historyModal.isOpen && !!historyModal.subtaskId }
@@ -147,33 +158,125 @@ export function ManagerApprovalPanel({ currentUser }: ManagerApprovalPanelProps)
     },
   })
 
-  // Filtrar subtarefas por status
-  const getPendingSubtasks = () => {
+  // Função auxiliar para obter data relevante da subtarefa
+  const getRelevantDate = (subtask: any): Date | null => {
+    if (subtask.status === SubtaskStatus.APPROVED && subtask.approvedAt) {
+      return new Date(subtask.approvedAt)
+    } else if (subtask.status === SubtaskStatus.COMPLETED_PENDING && subtask.completedAt) {
+      return new Date(subtask.completedAt)
+    } else if (subtask.status === SubtaskStatus.BLOCKED) {
+      return subtask.updatedAt ? new Date(subtask.updatedAt) : new Date(subtask.createdAt)
+    } else {
+      return subtask.completedAt 
+        ? new Date(subtask.completedAt) 
+        : subtask.createdAt 
+        ? new Date(subtask.createdAt)
+        : null
+    }
+  }
+
+  // Função de filtro de data
+  const shouldIncludeSubtask = (subtask: any): boolean => {
+    if (dateFilter === 'all') return true
+
+    const dateToCheck = getRelevantDate(subtask)
+    if (!dateToCheck) return true // Se não tem data, mostrar sempre
+
+    const now = new Date()
+    
+    switch(dateFilter) {
+      case 'this_month': {
+        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
+        return dateToCheck >= firstDay
+      }
+      case 'last_month': {
+        const firstDayLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+        const lastDayLastMonth = new Date(now.getFullYear(), now.getMonth(), 0)
+        return dateToCheck >= firstDayLastMonth && dateToCheck <= lastDayLastMonth
+      }
+      case 'last_3_months': {
+        const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, 1)
+        return dateToCheck >= threeMonthsAgo
+      }
+      case 'custom': {
+        if (!customDateStart || !customDateEnd) return true
+        const start = new Date(customDateStart)
+        const end = new Date(customDateEnd)
+        end.setHours(23, 59, 59, 999) // Incluir o dia inteiro
+        return dateToCheck >= start && dateToCheck <= end
+      }
+      default:
+        return true
+    }
+  }
+
+  // Filtrar subtarefas por status com filtro de data
+  const getPendingSubtasks = useMemo(() => {
     if (!mainTasks) return []
-    return mainTasks.reduce((acc: any[], task) => {
+    const allPending = mainTasks.reduce((acc: any[], task) => {
       const pending = task.subtasks.filter((s: any) => s.status === SubtaskStatus.COMPLETED_PENDING)
       return acc.concat(pending.map((s: any) => ({ ...s, mainTaskTitle: task.title })))
     }, [])
-  }
+    return allPending.filter(shouldIncludeSubtask)
+  }, [mainTasks, dateFilter, customDateStart, customDateEnd])
 
-  const getBlockedSubtasks = () => {
+  const getBlockedSubtasks = useMemo(() => {
     if (!mainTasks) return []
-    return mainTasks.reduce((acc: any[], task) => {
+    const allBlocked = mainTasks.reduce((acc: any[], task) => {
       const blocked = task.subtasks.filter((s: any) => s.status === SubtaskStatus.BLOCKED)
       return acc.concat(blocked.map((s: any) => ({ ...s, mainTaskTitle: task.title })))
     }, [])
-  }
+    return allBlocked.filter(shouldIncludeSubtask)
+  }, [mainTasks, dateFilter, customDateStart, customDateEnd])
 
-  const getAllSubtasks = () => {
+  const getApprovedSubtasks = useMemo(() => {
     if (!mainTasks) return []
-    return mainTasks.reduce((acc: any[], task) => {
+    const allApproved = mainTasks.reduce((acc: any[], task) => {
+      const approved = task.subtasks.filter((s: any) => s.status === SubtaskStatus.APPROVED)
+      return acc.concat(approved.map((s: any) => ({ ...s, mainTaskTitle: task.title })))
+    }, [])
+    return allApproved.filter(shouldIncludeSubtask)
+  }, [mainTasks, dateFilter, customDateStart, customDateEnd])
+
+  const getAllSubtasks = useMemo(() => {
+    if (!mainTasks) return []
+    const all = mainTasks.reduce((acc: any[], task) => {
       return acc.concat(task.subtasks.map((s: any) => ({ ...s, mainTaskTitle: task.title })))
     }, [])
-  }
+    return all.filter(shouldIncludeSubtask)
+  }, [mainTasks, dateFilter, customDateStart, customDateEnd])
+
+  // Função para obter subtarefas filtradas baseado no filtro ativo e usuário
+  const getFilteredSubtasks = useMemo(() => {
+    let filtered: any[] = []
+    switch(activeFilter) {
+      case 'pending':
+        filtered = getPendingSubtasks
+        break
+      case 'blocked':
+        filtered = getBlockedSubtasks
+        break
+      case 'approved':
+        filtered = getApprovedSubtasks
+        break
+      case 'all':
+      default:
+        filtered = getAllSubtasks
+    }
+    
+    // Aplicar filtro de usuário
+    if (userFilter !== 'all' && filtered) {
+      filtered = filtered.filter((subtask: any) => {
+        return subtask.assignedToId === userFilter
+      })
+    }
+    
+    return filtered
+  }, [activeFilter, userFilter, getPendingSubtasks, getBlockedSubtasks, getApprovedSubtasks, getAllSubtasks])
 
   const getSubtasksWithUnreadComments = (subtasksList?: any[]) => {
     if (!mainTasks) return 0
-    const subsToCheck = subtasksList || getAllSubtasks()
+    const subsToCheck = subtasksList || getAllSubtasks
     return subsToCheck.filter((subtask: any) => {
       const hasComments = subtask.comments && subtask.comments.length > 0
       if (!hasComments) return false
@@ -195,9 +298,9 @@ export function ManagerApprovalPanel({ currentUser }: ManagerApprovalPanelProps)
   // Função específica para "Todas as Subtarefas" - exclui as que já estão nas outras abas
   const getOtherSubtasksWithUnreadComments = () => {
     if (!mainTasks) return 0
-    const allSubtasks = getAllSubtasks()
-    const pendingSubtasks = getPendingSubtasks()
-    const blockedSubtasks = getBlockedSubtasks()
+    const allSubtasks = getAllSubtasks
+    const pendingSubtasks = getPendingSubtasks
+    const blockedSubtasks = getBlockedSubtasks
     
     // Filtrar subtarefas que NÃO estão em "Aguardando" nem "Bloqueadas"
     const otherSubtasks = allSubtasks.filter((subtask: any) => {
@@ -327,21 +430,44 @@ export function ManagerApprovalPanel({ currentUser }: ManagerApprovalPanelProps)
 
     const hasUnreadComments = unreadComments > 0
     
+    // Estilos específicos baseados no status
+    const getCardStyle = () => {
+      switch(subtask.status) {
+        case SubtaskStatus.BLOCKED:
+          return 'mb-4 hover:shadow-md transition-shadow border-l-4 border-red-500 bg-red-50/50'
+        case SubtaskStatus.COMPLETED_PENDING:
+          return 'mb-4 hover:shadow-md transition-shadow border-l-4 border-yellow-500 bg-yellow-50/30'
+        case SubtaskStatus.APPROVED:
+          return 'mb-4 hover:shadow-md transition-shadow border-l-4 border-green-500 bg-green-50/20'
+        default:
+          return `mb-4 hover:shadow-md transition-shadow ${hasUnreadComments ? 'bg-purple-50/20' : ''}`
+      }
+    }
+    
     return (
-      <Card className={`mb-4 hover:shadow-md transition-shadow ${hasUnreadComments ? 'bg-purple-50/20' : ''}`}>
-      <CardContent className="p-4">
-        <div className="space-y-3">
+      <Card 
+        className={`${getCardStyle()} mb-2 cursor-pointer hover:shadow-lg transition-all`}
+        onClick={() => handleViewDetails(subtask)}
+      >
+      <CardContent className="p-3">
+        <div className="space-y-2">
           {/* Header */}
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <h4 className="font-medium text-lg">{subtask.title}</h4>
-              <p className="text-sm text-gray-600 mt-1">📋 {subtask.mainTaskTitle}</p>
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex-1 min-w-0">
+              <h4 className="font-medium text-sm leading-tight">{subtask.title}</h4>
+              <p className="text-xs text-gray-500 mt-0.5 truncate">📋 {subtask.mainTaskTitle}</p>
             </div>
-            <div className="flex items-center space-x-2">
-              <Badge className={getStatusColor(subtask.status)}>
+            <div className="flex items-center space-x-1.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+              {subtask.status === SubtaskStatus.BLOCKED && (
+                <AlertTriangle className="h-4 w-4 text-red-600" />
+              )}
+              {subtask.status === SubtaskStatus.APPROVED && (
+                <CheckCircle2 className="h-4 w-4 text-green-600" />
+              )}
+              <Badge className={`${getStatusColor(subtask.status)} text-xs ${subtask.status === SubtaskStatus.BLOCKED ? 'font-semibold' : ''}`}>
                 {getStatusLabel(subtask.status)}
               </Badge>
-              <Badge variant="outline" className={getPriorityColor(subtask.priority)}>
+              <Badge variant="outline" className={`${getPriorityColor(subtask.priority)} text-xs`}>
                 {subtask.priority}
               </Badge>
             </div>
@@ -349,55 +475,71 @@ export function ManagerApprovalPanel({ currentUser }: ManagerApprovalPanelProps)
 
           {/* Description */}
           {subtask.description && (
-              <p className="text-sm text-gray-700 line-clamp-2">{subtask.description}</p>
+              <p className="text-xs text-gray-600 line-clamp-2">{subtask.description}</p>
           )}
 
-          {/* Meta informações */}
-          <div className="grid grid-cols-2 gap-4 text-sm text-gray-600">
+          {/* Meta informações compactas */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600">
             <div className="flex items-center space-x-1">
-              <User className="h-4 w-4" />
-              <span>Responsável: {subtask.assignedTo?.name || 'Não atribuído'}</span>
+              <User className="h-3.5 w-3.5 flex-shrink-0" />
+              <span className="truncate">{subtask.assignedTo?.name || 'Não atribuído'}</span>
             </div>
             <div className="flex items-center space-x-1">
-              <Calendar className="h-4 w-4" />
+              <Calendar className="h-3.5 w-3.5 flex-shrink-0" />
               <span>Prazo: {formatDate(subtask.deadline)}</span>
             </div>
-            <div className="flex items-center space-x-1">
-              <Clock className="h-4 w-4" />
-              <span>Concluído em: {formatDate(subtask.completedAt)}</span>
-            </div>
-            <div className="flex items-center space-x-1">
-              <BarChart3 className="h-4 w-4" />
-              <span>Estimado: {subtask.estimatedHours || 0}h</span>
-            </div>
+            {subtask.completedAt && (
+              <div className="flex items-center space-x-1">
+                <Clock className="h-3.5 w-3.5 flex-shrink-0" />
+                <span>Concluído: {formatDate(subtask.completedAt)}</span>
+              </div>
+            )}
+            {subtask.status === SubtaskStatus.APPROVED && subtask.approvedAt && (
+              <div className="flex items-center space-x-1 text-green-700 font-medium">
+                <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0" />
+                <span>Aprovado: {formatDate(subtask.approvedAt)}</span>
+              </div>
+            )}
+            {subtask.status !== SubtaskStatus.APPROVED && subtask.estimatedHours && (
+              <div className="flex items-center space-x-1">
+                <BarChart3 className="h-3.5 w-3.5 flex-shrink-0" />
+                <span>{subtask.estimatedHours}h</span>
+              </div>
+            )}
           </div>
 
             {/* Indicadores de Checklist e Comentários */}
             {(hasComments || hasChecklist) && (
-              <div className="flex items-center gap-3 text-sm">
+              <div className="flex items-center gap-2 text-xs" onClick={(e) => e.stopPropagation()}>
                 {hasChecklist && (
                   <button
-                    onClick={() => handleViewDetails(subtask, 'checklist')}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleViewDetails(subtask, 'checklist')
+                    }}
                     className="flex items-center gap-1 text-blue-600 hover:text-blue-700 hover:underline transition-colors"
                   >
-                    <CheckCircle2 className="h-4 w-4" />
-                    <span>{JSON.parse(subtask.checklistItems || '[]').filter((item: any) => item.checked).length}/{JSON.parse(subtask.checklistItems || '[]').length} itens</span>
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    <span>{JSON.parse(subtask.checklistItems || '[]').filter((item: any) => item.checked).length}/{JSON.parse(subtask.checklistItems || '[]').length}</span>
                   </button>
                 )}
                 {hasComments && (
                   <button
-                    onClick={() => handleViewDetails(subtask, 'comments')}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleViewDetails(subtask, 'comments')
+                    }}
                     className={`flex items-center gap-1 transition-all hover:underline ${
                       hasUnreadComments 
                         ? 'text-purple-600 font-semibold hover:text-purple-700' 
                         : 'text-gray-600 hover:text-gray-700'
                     }`}
                   >
-                    <MessageSquare className={`h-4 w-4 ${hasUnreadComments ? 'fill-purple-600' : ''}`} />
-                    <span>{subtask.comments.length} comentário{subtask.comments.length !== 1 ? 's' : ''}</span>
+                    <MessageSquare className={`h-3.5 w-3.5 ${hasUnreadComments ? 'fill-purple-600' : ''}`} />
+                    <span>{subtask.comments.length}</span>
                     {hasUnreadComments && (
-                      <Badge variant="default" className="ml-1 bg-purple-600 text-white text-xs px-1.5 py-0 animate-pulse">
-                        {unreadComments} novo{unreadComments !== 1 ? 's' : ''}
+                      <Badge variant="default" className="ml-0.5 bg-purple-600 text-white text-xs px-1 py-0 h-4 animate-pulse">
+                        {unreadComments}
                       </Badge>
                     )}
                   </button>
@@ -408,38 +550,45 @@ export function ManagerApprovalPanel({ currentUser }: ManagerApprovalPanelProps)
 
           {/* Actions */}
           {showActions && subtask.status === SubtaskStatus.COMPLETED_PENDING && (
-              <div className="flex items-center justify-between pt-3 border-t gap-2">
+              <div className="flex items-center justify-end pt-2 border-t gap-1.5" onClick={(e) => e.stopPropagation()}>
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
-                  onClick={() => handleViewDetails(subtask)}
-                  className="flex-1"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleViewDetails(subtask)
+                  }}
+                  className="h-7 px-2 text-xs"
                 >
-                  <Eye className="h-4 w-4 mr-2" />
-                  Ver Detalhes Completos
+                  <Eye className="h-3.5 w-3.5 mr-1" />
+                  Detalhes
                 </Button>
-              
-              <div className="flex items-center space-x-2">
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => handleReject(subtask.id)}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleReject(subtask.id)
+                  }}
                   disabled={rejectSubtask.isPending}
+                  className="h-7 px-2 text-xs"
                 >
-                  <XCircle className="h-4 w-4 mr-2" />
+                  <XCircle className="h-3.5 w-3.5 mr-1" />
                   Reprovar
                 </Button>
                 <Button
                   size="sm"
-                  onClick={() => handleApprove(subtask.id)}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleApprove(subtask.id)
+                  }}
                   disabled={approveSubtask.isPending}
-                  className="bg-green-600 hover:bg-green-700"
+                  className="bg-green-600 hover:bg-green-700 h-7 px-3 text-xs"
                 >
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
+                  <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
                   Aprovar
                 </Button>
               </div>
-            </div>
           )}
         </div>
       </CardContent>
@@ -458,239 +607,309 @@ export function ManagerApprovalPanel({ currentUser }: ManagerApprovalPanelProps)
     )
   }
 
-  const pendingSubtasks = getPendingSubtasks()
-  const blockedSubtasks = getBlockedSubtasks()
-  const allSubtasks = getAllSubtasks()
+  const pendingSubtasks = getPendingSubtasks
+  const blockedSubtasks = getBlockedSubtasks
+  const approvedSubtasks = getApprovedSubtasks
+  const allSubtasks = getAllSubtasks
+
+  // Ordenar e paginar subtarefas filtradas
+  const sortedSubtasks = useMemo(() => {
+    const filtered = getFilteredSubtasks
+    return [...filtered].sort((a: any, b: any) => {
+      // Calcular se tem comentários não lidos
+      const aHasUnread = a.comments?.some((comment: any) => {
+        if (comment.authorId === currentUser.id) return false
+        try {
+          const readBy = comment.readBy ? JSON.parse(comment.readBy) : []
+          return !readBy.includes(currentUser.id)
+        } catch {
+          return true
+        }
+      }) || false
+      
+      const bHasUnread = b.comments?.some((comment: any) => {
+        if (comment.authorId === currentUser.id) return false
+        try {
+          const readBy = comment.readBy ? JSON.parse(comment.readBy) : []
+          return !readBy.includes(currentUser.id)
+        } catch {
+          return true
+        }
+      }) || false
+      
+      // Tarefas com comentários não lidos no topo
+      if (aHasUnread && !bHasUnread) return -1
+      if (!aHasUnread && bHasUnread) return 1
+      
+      // Para aprovadas, ordenar por data de aprovação
+      if (activeFilter === 'approved') {
+        const dateA = a.approvedAt ? new Date(a.approvedAt).getTime() : 0
+        const dateB = b.approvedAt ? new Date(b.approvedAt).getTime() : 0
+        return dateB - dateA
+      }
+      
+      // Para outras, ordenar por data de criação (mais recentes primeiro)
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    })
+  }, [getFilteredSubtasks, currentUser.id, activeFilter])
+
+  // Calcular paginação
+  const totalPages = Math.ceil(sortedSubtasks.length / ITEMS_PER_PAGE)
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
+  const endIndex = startIndex + ITEMS_PER_PAGE
+  const paginatedSubtasks = sortedSubtasks.slice(startIndex, endIndex)
+
+  // Resetar para página 1 quando o filtro muda
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [activeFilter, userFilter])
+
+  // Função para obter mensagem quando não há tarefas
+  const getEmptyMessage = () => {
+    switch(activeFilter) {
+      case 'pending':
+        return {
+          title: 'Nenhuma tarefa aguardando aprovação',
+          description: 'Todas as tarefas foram aprovadas ou estão em andamento.'
+        }
+      case 'blocked':
+        return {
+          title: 'Nenhuma tarefa bloqueada',
+          description: 'Não há tarefas bloqueadas por dependências no momento.'
+        }
+      case 'approved':
+        return {
+          title: 'Nenhuma tarefa aprovada no período selecionado',
+          description: 'Ajuste o filtro de data para ver tarefas aprovadas em outros períodos.'
+        }
+      case 'all':
+      default:
+        return {
+          title: 'Nenhuma tarefa encontrada',
+          description: 'Ajuste os filtros para ver mais tarefas.'
+        }
+    }
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h2 className="text-2xl font-bold">Painel de Aprovação do Gestor</h2>
-        <p className="text-gray-600">Gerencie subtarefas que aguardam sua aprovação</p>
+    <div className="space-y-3">
+      {/* Header Compacto */}
+      <div className="flex items-center justify-between pb-2 border-b">
+        <div>
+          <h2 className="text-xl font-bold">Central de Tarefas</h2>
+        </div>
+        {/* Filtros - Inline com header */}
+        <div className="flex items-center gap-2">
+          <Filter className="h-3.5 w-3.5 text-gray-500" />
+          {/* Filtro de Usuário */}
+          <Select value={userFilter} onValueChange={(value: any) => {
+            setUserFilter(value)
+            setCurrentPage(1)
+          }}>
+            <SelectTrigger id="user-filter" className="w-[150px] h-8 text-xs">
+              <SelectValue placeholder="Todos usuários" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos usuários</SelectItem>
+              {users?.map((user) => (
+                <SelectItem key={user.id} value={user.id}>
+                  {user.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {/* Filtro de Data */}
+          <Select value={dateFilter} onValueChange={(value: any) => setDateFilter(value)}>
+            <SelectTrigger id="date-filter" className="w-[140px] h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="this_month">Este Mês</SelectItem>
+              <SelectItem value="last_month">Mês Passado</SelectItem>
+              <SelectItem value="last_3_months">Últimos 3 Meses</SelectItem>
+              <SelectItem value="all">Todo Período</SelectItem>
+              <SelectItem value="custom">Personalizado</SelectItem>
+            </SelectContent>
+          </Select>
+          {dateFilter === 'custom' && (
+            <div className="flex items-center gap-1.5">
+              <Input
+                type="date"
+                value={customDateStart}
+                onChange={(e) => setCustomDateStart(e.target.value)}
+                className="w-[130px] h-8 text-xs"
+                placeholder="Data Inicial"
+              />
+              <span className="text-xs text-gray-500">até</span>
+              <Input
+                type="date"
+                value={customDateEnd}
+                onChange={(e) => setCustomDateEnd(e.target.value)}
+                className="w-[130px] h-8 text-xs"
+                placeholder="Data Final"
+              />
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Métricas */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="flex items-center p-6">
-            <div className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-yellow-100 rounded-full flex items-center justify-center">
-                <Clock className="h-4 w-4 text-yellow-600" />
+      {/* Métricas Compactas - Cards Clicáveis */}
+      <div className="grid grid-cols-4 gap-2">
+        <Card 
+          className={`border shadow-sm cursor-pointer transition-all ${
+            activeFilter === 'pending' 
+              ? 'border-2 border-blue-500 bg-blue-50' 
+              : 'border-gray-200 hover:border-gray-300'
+          }`}
+          onClick={() => {
+            setActiveFilter('pending')
+            setCurrentPage(1)
+          }}
+        >
+          <CardContent className="flex items-center py-2 px-3">
+            <div className="flex items-center space-x-1.5 w-full">
+              <div className="w-5 h-5 bg-yellow-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <Clock className="h-3 w-3 text-yellow-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">{pendingSubtasks.length}</p>
-                <p className="text-xs text-muted-foreground">Aguardando Aprovação</p>
+              <div className="flex-1 min-w-0">
+                <p className="text-base font-semibold leading-tight">{pendingSubtasks.length}</p>
+                <p className="text-xs text-muted-foreground leading-tight truncate">Aguardando</p>
               </div>
             </div>
           </CardContent>
         </Card>
         
-        <Card>
-          <CardContent className="flex items-center p-6">
-            <div className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
-                <AlertTriangle className="h-4 w-4 text-red-600" />
+        <Card 
+          className={`border shadow-sm cursor-pointer transition-all ${
+            activeFilter === 'blocked' 
+              ? 'border-2 border-blue-500 bg-blue-50' 
+              : 'border-gray-200 hover:border-gray-300'
+          }`}
+          onClick={() => {
+            setActiveFilter('blocked')
+            setCurrentPage(1)
+          }}
+        >
+          <CardContent className="flex items-center py-2 px-3">
+            <div className="flex items-center space-x-1.5 w-full">
+              <div className="w-5 h-5 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="h-3 w-3 text-red-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">{blockedSubtasks.length}</p>
-                <p className="text-xs text-muted-foreground">Bloqueadas</p>
+              <div className="flex-1 min-w-0">
+                <p className="text-base font-semibold leading-tight">{blockedSubtasks.length}</p>
+                <p className="text-xs text-muted-foreground leading-tight truncate">Bloqueadas</p>
               </div>
             </div>
           </CardContent>
         </Card>
         
-        <Card>
-          <CardContent className="flex items-center p-6">
-            <div className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                <CheckCircle2 className="h-4 w-4 text-green-600" />
+        <Card 
+          className={`border shadow-sm cursor-pointer transition-all ${
+            activeFilter === 'approved' 
+              ? 'border-2 border-blue-500 bg-blue-50' 
+              : 'border-gray-200 hover:border-gray-300'
+          }`}
+          onClick={() => {
+            setActiveFilter('approved')
+            setCurrentPage(1)
+          }}
+        >
+          <CardContent className="flex items-center py-2 px-3">
+            <div className="flex items-center space-x-1.5 w-full">
+              <div className="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <CheckCircle2 className="h-3 w-3 text-green-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">
-                  {allSubtasks.filter(s => s.status === SubtaskStatus.APPROVED).length}
-                </p>
-                <p className="text-xs text-muted-foreground">Aprovadas</p>
+              <div className="flex-1 min-w-0">
+                <p className="text-base font-semibold leading-tight">{approvedSubtasks.length}</p>
+                <p className="text-xs text-muted-foreground leading-tight truncate">Aprovadas</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card 
+          className={`border shadow-sm cursor-pointer transition-all ${
+            activeFilter === 'all' 
+              ? 'border-2 border-blue-500 bg-blue-50' 
+              : 'border-gray-200 hover:border-gray-300'
+          }`}
+          onClick={() => {
+            setActiveFilter('all')
+            setCurrentPage(1)
+          }}
+        >
+          <CardContent className="flex items-center py-2 px-3">
+            <div className="flex items-center space-x-1.5 w-full">
+              <div className="w-5 h-5 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <Filter className="h-3 w-3 text-gray-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-base font-semibold leading-tight">{allSubtasks.length}</p>
+                <p className="text-xs text-muted-foreground leading-tight truncate">Todas</p>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Abas */}
-      <Tabs defaultValue="pending" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="pending" className="flex items-center gap-2">
-            Aguardando Aprovação ({pendingSubtasks.length})
-            {getSubtasksWithUnreadComments(pendingSubtasks) > 0 && (
-              <Badge variant="default" className="bg-purple-600 text-white text-xs">
-                💬 {getSubtasksWithUnreadComments(pendingSubtasks)}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="blocked" className="flex items-center gap-2">
-            Bloqueadas ({blockedSubtasks.length})
-            {getSubtasksWithUnreadComments(blockedSubtasks) > 0 && (
-              <Badge variant="default" className="bg-purple-600 text-white text-xs">
-                💬 {getSubtasksWithUnreadComments(blockedSubtasks)}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="all" className="flex items-center gap-2">
-            Todas as Subtarefas ({allSubtasks.length})
-            {getOtherSubtasksWithUnreadComments() > 0 && (
-              <Badge variant="default" className="bg-purple-600 text-white text-xs">
-                💬 {getOtherSubtasksWithUnreadComments()}
-              </Badge>
-            )}
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="pending">
-          {pendingSubtasks.length === 0 ? (
-            <Card>
-              <CardContent className="text-center py-8">
-                <CheckCircle2 className="h-12 w-12 text-green-600 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Nenhuma subtarefa aguardando aprovação
-                </h3>
-                <p className="text-gray-600">
-                  Todas as subtarefas estão aprovadas ou em andamento.
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-4">
-              {pendingSubtasks
-                .sort((a: any, b: any) => {
-                  // Calcular se tem comentários não lidos
-                  const aHasUnread = a.comments?.some((comment: any) => {
-                    if (comment.authorId === currentUser.id) return false
-                    try {
-                      const readBy = comment.readBy ? JSON.parse(comment.readBy) : []
-                      return !readBy.includes(currentUser.id)
-                    } catch {
-                      return true
-                    }
-                  }) || false
-                  
-                  const bHasUnread = b.comments?.some((comment: any) => {
-                    if (comment.authorId === currentUser.id) return false
-                    try {
-                      const readBy = comment.readBy ? JSON.parse(comment.readBy) : []
-                      return !readBy.includes(currentUser.id)
-                    } catch {
-                      return true
-                    }
-                  }) || false
-                  
-                  // Tarefas com comentários não lidos no topo
-                  if (aHasUnread && !bHasUnread) return -1
-                  if (!aHasUnread && bHasUnread) return 1
-                  return 0
-                })
-                .map((subtask: any) => (
-                <SubtaskCard key={subtask.id} subtask={subtask} />
-                ))
-              }
-            </div>
-          )}
-        </TabsContent>
-
-        <TabsContent value="blocked">
-          {blockedSubtasks.length === 0 ? (
-            <Card>
-              <CardContent className="text-center py-8">
-                <CheckCircle2 className="h-12 w-12 text-green-600 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Nenhuma subtarefa bloqueada
-                </h3>
-                <p className="text-gray-600">
-                  Não há subtarefas bloqueadas por dependências no momento.
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-4">
-              {blockedSubtasks
-                .sort((a: any, b: any) => {
-                  // Calcular se tem comentários não lidos
-                  const aHasUnread = a.comments?.some((comment: any) => {
-                    if (comment.authorId === currentUser.id) return false
-                    try {
-                      const readBy = comment.readBy ? JSON.parse(comment.readBy) : []
-                      return !readBy.includes(currentUser.id)
-                    } catch {
-                      return true
-                    }
-                  }) || false
-                  
-                  const bHasUnread = b.comments?.some((comment: any) => {
-                    if (comment.authorId === currentUser.id) return false
-                    try {
-                      const readBy = comment.readBy ? JSON.parse(comment.readBy) : []
-                      return !readBy.includes(currentUser.id)
-                    } catch {
-                      return true
-                    }
-                  }) || false
-                  
-                  // Tarefas com comentários não lidos no topo
-                  if (aHasUnread && !bHasUnread) return -1
-                  if (!aHasUnread && bHasUnread) return 1
-                  return 0
-                })
-                .map((subtask: any) => (
-                <SubtaskCard key={subtask.id} subtask={subtask} showActions={false} />
-                ))
-              }
-            </div>
-          )}
-        </TabsContent>
-
-        <TabsContent value="all">
-          <div className="space-y-4">
-            {allSubtasks
-              .sort((a: any, b: any) => {
-                // Calcular se tem comentários não lidos em cada subtarefa
-                const aHasUnread = a.comments?.some((comment: any) => {
-                  if (comment.authorId === currentUser.id) return false
-                  try {
-                    const readBy = comment.readBy ? JSON.parse(comment.readBy) : []
-                    return !readBy.includes(currentUser.id)
-                  } catch {
-                    return true
-                  }
-                }) || false
-                
-                const bHasUnread = b.comments?.some((comment: any) => {
-                  if (comment.authorId === currentUser.id) return false
-                  try {
-                    const readBy = comment.readBy ? JSON.parse(comment.readBy) : []
-                    return !readBy.includes(currentUser.id)
-                  } catch {
-                    return true
-                  }
-                }) || false
-                
-                // Tarefas com comentários não lidos no topo
-                if (aHasUnread && !bHasUnread) return -1
-                if (!aHasUnread && bHasUnread) return 1
-                
-                // Se ambas têm ou ambas não têm, manter ordem original (por data)
-                return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-              })
-              .map((subtask: any) => (
+      {/* Lista de Tarefas Paginada */}
+      {sortedSubtasks.length === 0 ? (
+        <Card>
+          <CardContent className="text-center py-8">
+            <CheckCircle2 className="h-12 w-12 text-green-600 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              {getEmptyMessage().title}
+            </h3>
+            <p className="text-gray-600">
+              {getEmptyMessage().description}
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          <div className="space-y-2">
+            {paginatedSubtasks.map((subtask: any) => (
               <SubtaskCard 
                 key={subtask.id} 
                 subtask={subtask} 
                 showActions={subtask.status === SubtaskStatus.COMPLETED_PENDING}
               />
-              ))
-            }
+            ))}
           </div>
-        </TabsContent>
-      </Tabs>
+          
+          {/* Controles de Paginação */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between pt-4 border-t">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className="h-8"
+                >
+                  Anterior
+                </Button>
+                <span className="text-sm text-gray-600">
+                  Página {currentPage} de {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  className="h-8"
+                >
+                  Próxima
+                </Button>
+              </div>
+              <div className="text-sm text-gray-500">
+                Mostrando {startIndex + 1}-{Math.min(endIndex, sortedSubtasks.length)} de {sortedSubtasks.length} tarefas
+              </div>
+            </div>
+          )}
+        </>
+      )}
 
       {/* Modal de Reprovação */}
       <Dialog open={rejectionModal.isOpen} onOpenChange={(open) => 
@@ -704,7 +923,7 @@ export function ManagerApprovalPanel({ currentUser }: ManagerApprovalPanelProps)
             </DialogDescription>
           </DialogHeader>
           
-          <div className="space-y-4">
+          <div className="space-y-2">
             <div>
               <label className="text-sm font-medium">Motivo da reprovação *</label>
               <Textarea
@@ -750,7 +969,7 @@ export function ManagerApprovalPanel({ currentUser }: ManagerApprovalPanelProps)
             </DialogDescription>
           </DialogHeader>
           
-          <div className="space-y-4">
+          <div className="space-y-2">
             {history && history.length > 0 ? (
               history.map((log: any) => (
                 <div key={log.id} className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">

@@ -1,7 +1,0 @@
-export * from "./calendar-view"
-export * from "./calendar-view-context"
-export * from "./calendar-view-event"
-export * from "./calendar-view-grid"
-export * from "./calendar-view-header"
-export * from "./calendar-view-sidebar"
-export * from "./calendar-view-time-grid"
