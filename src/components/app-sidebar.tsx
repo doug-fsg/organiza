@@ -12,6 +12,7 @@ import {
   User2,
   CheckCircle2,
   ChevronDown,
+  ClipboardList,
 } from "lucide-react"
 
 import {
@@ -105,6 +106,13 @@ export function AppSidebar({
       value: "kanban",
       isVisible: true,
       description: "Visualizar e gerenciar suas tarefas"
+    },
+    {
+      title: "Gerenciamento",
+      icon: ClipboardList,
+      value: "management",
+      isVisible: canManageTasks,
+      description: "Criar e gerenciar tarefas principais"
     },
     {
       title: "Central de Tarefas",
