@@ -61,7 +61,7 @@ export function DependencyManager({
 
   const handleAddDependency = () => {
     if (!selectedDependency) {
-      toast.error('Selecione uma subtarefa para criar a dependência')
+      toast.error('Selecione uma tarefa para criar a dependência')
       return
     }
 
@@ -148,16 +148,16 @@ export function DependencyManager({
           <DialogHeader>
             <DialogTitle>Adicionar Dependência</DialogTitle>
             <DialogDescription>
-              Selecione uma subtarefa que deve ser concluída antes de "{subtaskTitle}" poder ser iniciada.
+              Selecione uma tarefa que deve ser concluída antes de "{subtaskTitle}" poder ser iniciada.
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Subtarefa que bloqueia:</label>
+              <label className="text-sm font-medium">Tarefa que bloqueia:</label>
               <Select value={selectedDependency} onValueChange={setSelectedDependency}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Selecione uma subtarefa..." />
+                  <SelectValue placeholder="Selecione uma tarefa..." />
                 </SelectTrigger>
                 <SelectContent>
                   {availableDependencies.map((subtask) => (
@@ -205,7 +205,7 @@ export function DependencyManager({
         <div className="text-center py-4 text-sm text-muted-foreground">
           <Link className="h-8 w-8 mx-auto mb-2 opacity-50" />
           <p>Nenhuma dependência disponível</p>
-          <p className="text-xs">Todas as outras subtarefas já são dependências ou não existem</p>
+          <p className="text-xs">Todas as outras tarefas já são dependências ou não existem</p>
         </div>
       )}
     </div>

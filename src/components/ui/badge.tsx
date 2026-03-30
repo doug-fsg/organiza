@@ -5,7 +5,7 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const badgeVariants = cva(
-  "inline-flex items-center justify-center rounded-md border px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap shrink-0 [&>svg]:size-3 gap-1 [&>svg]:pointer-events-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive transition-[color,box-shadow] overflow-hidden",
+  "inline-flex items-center justify-center rounded-lg border px-[10px] py-1 text-xs font-semibold uppercase tracking-[0.02em] w-fit whitespace-nowrap shrink-0 [&>svg]:size-3 gap-1 [&>svg]:pointer-events-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive transition-all duration-200 overflow-hidden",
   {
     variants: {
       variant: {
@@ -14,9 +14,22 @@ const badgeVariants = cva(
         secondary:
           "border-transparent bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90",
         destructive:
-          "border-transparent bg-destructive text-white [a&]:hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
+          "border-transparent bg-destructive text-destructive-foreground [a&]:hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40",
+        success:
+          "border-transparent bg-[#D1FAE5] text-[#065F46] [a&]:hover:bg-success/90",
+        warning:
+          "border-transparent bg-[#FEF3C7] text-[#92400E] [a&]:hover:bg-warning/90",
+        info:
+          "border-transparent bg-[#DBEAFE] text-[#1E40AF] [a&]:hover:bg-info/90",
         outline:
           "text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
+        // Meetalo CRM Design System - Status variants
+        preSale: "border-transparent bg-[#FEF3C7] text-[#92400E]",
+        closing: "border-transparent bg-[#DBEAFE] text-[#1E40AF]",
+        closed: "border-transparent bg-[#D1FAE5] text-[#065F46]",
+        lost: "border-transparent bg-[#FEE2E2] text-[#991B1B]",
+        new: "border-transparent bg-[#E0E7FF] text-[#3730A3]",
+        organic: "border-transparent bg-[#F3F4F6] text-[#374151]",
       },
     },
     defaultVariants: {

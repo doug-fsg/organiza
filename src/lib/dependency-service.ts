@@ -88,7 +88,7 @@ export class DependencyService {
           // Criar log de atividade
           await this.createActivityLog({
             type: 'SUBTASK_UNBLOCKED',
-            description: `Subtarefa desbloqueada automaticamente: todas as dependências foram resolvidas`,
+            description: `Tarefa desbloqueada automaticamente: todas as dependências foram resolvidas`,
             subtaskId: dependent.id,
             userId: dependent.assignedToId || 'system'
           })
@@ -151,7 +151,7 @@ export class DependencyService {
 
         await this.createActivityLog({
           type: 'SUBTASK_COMPLETED',
-          description: 'Subtarefa concluída e aguardando aprovação do gestor',
+          description: 'Tarefa concluída e aguardando aprovação do gestor',
           subtaskId,
           userId
         })
@@ -159,7 +159,7 @@ export class DependencyService {
         return {
           success: true,
           newStatus: SubtaskStatus.COMPLETED_PENDING,
-          message: 'Subtarefa concluída com sucesso! Aguardando aprovação do gestor.',
+          message: 'Tarefa concluída com sucesso! Aguardando aprovação do gestor.',
           isAutoApproved: false
         }
       }
@@ -176,7 +176,7 @@ export class DependencyService {
 
       await this.createActivityLog({
         type: 'SUBTASK_BLOCKED',
-        description: 'Subtarefa concluída mas bloqueada por dependências pendentes',
+        description: 'Tarefa concluída mas bloqueada por dependências pendentes',
         subtaskId,
         userId,
         metadata: JSON.stringify({
@@ -187,7 +187,7 @@ export class DependencyService {
       return {
         success: true,
         newStatus: SubtaskStatus.BLOCKED,
-        message: 'Subtarefa concluída, mas há dependências pendentes. Status alterado para "Bloqueado".',
+        message: 'Tarefa concluída, mas há dependências pendentes. Status alterado para "Bloqueado".',
         pendingDependencies: dependencyCheck.pendingDependencies
       }
     }
@@ -219,7 +219,7 @@ export class DependencyService {
 
     await this.createActivityLog({
       type: 'SUBTASK_APPROVED',
-      description: '⚡ Subtarefa aprovada automaticamente (não requer aprovação manual)',
+      description: '⚡ Tarefa aprovada automaticamente (não requer aprovação manual)',
       subtaskId,
       userId,
       metadata: JSON.stringify({
@@ -237,7 +237,7 @@ export class DependencyService {
     return {
       success: true,
       newStatus: SubtaskStatus.APPROVED,
-      message: '⚡ Subtarefa concluída e aprovada automaticamente!',
+      message: '⚡ Tarefa concluída e aprovada automaticamente!',
       isAutoApproved: true,
       unblockedSubtasks
     }
@@ -262,7 +262,7 @@ export class DependencyService {
 
     await this.createActivityLog({
       type: 'SUBTASK_APPROVED',
-      description: 'Subtarefa aprovada pelo gestor',
+      description: 'Tarefa aprovada pelo gestor',
       subtaskId,
       userId: approverId
     })
@@ -275,7 +275,7 @@ export class DependencyService {
 
     return {
       success: true,
-      message: 'Subtarefa aprovada com sucesso!',
+      message: 'Tarefa aprovada com sucesso!',
       unblockedSubtasks
     }
   }
@@ -323,7 +323,7 @@ export class DependencyService {
 
     await this.createActivityLog({
       type: 'SUBTASK_REJECTED',
-      description: `Subtarefa reprovada: ${reason}`,
+      description: `Tarefa reprovada: ${reason}`,
       subtaskId,
       userId: rejectorId,
       metadata: JSON.stringify({ reason })
@@ -331,7 +331,7 @@ export class DependencyService {
 
     return {
       success: true,
-      message: 'Subtarefa reprovada. O responsável foi notificado e a tarefa voltou para refazer.'
+      message: 'Tarefa reprovada. O responsável foi notificado e a tarefa voltou para refazer.'
     }
   }
 

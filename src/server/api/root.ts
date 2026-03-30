@@ -6,6 +6,14 @@ import { commentRouter } from '@/server/api/routers/comment'
 import { notificationRouter } from '@/server/api/routers/notification'
 import { userManagementRouter } from '@/server/api/routers/user-management'
 import { attachmentRouter } from '@/server/api/routers/attachment'
+import { servicePaymentRouter } from '@/server/api/routers/servicePayment'
+import { departmentRouter } from '@/server/api/routers/department'
+import { subtaskTemplateRouter } from '@/server/api/routers/subtask-template'
+import { clientRouter } from '@/server/api/routers/client'
+import { clientCustomAttributeRouter } from '@/server/api/routers/client-custom-attribute'
+import { apiKeyRouter } from '@/server/api/routers/api-key'
+import { webhookRouter } from '@/server/api/routers/webhook'
+import { taskFieldRouter } from '@/server/api/routers/task-field'
 
 /**
  * Router principal da API tRPC.
@@ -19,6 +27,14 @@ export const appRouter = createTRPCRouter({
   notification: notificationRouter,
   userManagement: userManagementRouter,
   attachment: attachmentRouter,
+  servicePayment: servicePaymentRouter,
+  department: departmentRouter,
+  subtaskTemplate: subtaskTemplateRouter,
+  clients: clientRouter,
+  clientCustomAttribute: clientCustomAttributeRouter,
+  apiKey: apiKeyRouter,
+  webhook: webhookRouter,
+  taskField: taskFieldRouter,
 })
 
 // Exportar tipo para o cliente

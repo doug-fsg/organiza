@@ -2,18 +2,19 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Calendar, User, Link, MessageSquare, CheckSquare, Send, Plus, X, CheckCircle2, XCircle, Paperclip } from 'lucide-react'
+import { Calendar, User, Link, MessageSquare, CheckSquare, Send, Plus, X, CheckCircle2, XCircle, Paperclip, Phone, Mail, MapPin, UserCircle, Copy, GitBranch, Lock } from 'lucide-react'
 import { api } from '@/lib/api'
 import toast from 'react-hot-toast'
 import { useSession } from 'next-auth/react'
 import { AttachmentPreview } from './attachment-preview'
+import { WorkflowProgressBar } from './workflow-progress-bar'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 interface UploadedFile {
   fileName: string
@@ -81,6 +82,11 @@ export function SubtaskDetailsModal({
   }, [isOpen, initialTab])
 
   // Queries
+  const { data: customAttributes = [] } = api.clientCustomAttribute.getAll.useQuery(
+    undefined,
+    { enabled: isOpen && !!subtask?.mainTask?.client }
+  )
+
   const { data: comments, refetch: refetchComments } = api.comment.getBySubtask.useQuery(
     { subtaskId: subtask?.id || '' },
     { 
@@ -152,26 +158,6 @@ export function SubtaskDetailsModal({
       hour: '2-digit',
       minute: '2-digit',
     })
-  }
-
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'URGENT': return 'bg-red-100 text-red-800'
-      case 'HIGH': return 'bg-orange-100 text-orange-800'
-      case 'MEDIUM': return 'bg-yellow-100 text-yellow-800'
-      case 'LOW': return 'bg-green-100 text-green-800'
-      default: return 'bg-gray-100 text-gray-800'
-    }
-  }
-
-  const getPriorityLabel = (priority: string) => {
-    switch (priority) {
-      case 'URGENT': return 'Urgente'
-      case 'HIGH': return 'Alta'
-      case 'MEDIUM': return 'Média'
-      case 'LOW': return 'Baixa'
-      default: return priority
-    }
   }
 
   const getStatusLabel = (status: string) => {
@@ -333,16 +319,44 @@ export function SubtaskDetailsModal({
     }
   }, [isOpen, subtask?.id, session?.user?.id])
 
+  const client = subtask.mainTask?.client
+  const parsedCustomValues: Record<string, unknown> = client?.customValues
+    ? (() => {
+        try {
+          return JSON.parse(client.customValues) as Record<string, unknown>
+        } catch {
+          return {}
+        }
+      })()
+    : {}
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[700px] max-h-[85vh]">
-        <DialogHeader>
-          <DialogTitle className="flex items-center justify-between pr-8">
-            <span className="truncate">{subtask.title}</span>
-            <Badge className={getPriorityColor(subtask.priority)}>
-              {getPriorityLabel(subtask.priority)}
-            </Badge>
-          </DialogTitle>
+      <DialogContent className="sm:max-w-[920px] max-h-[90vh] overflow-hidden flex flex-col">
+        <DialogHeader className="space-y-0 text-left">
+          <div className="flex items-start gap-2 pr-10">
+            <DialogTitle className="text-lg font-semibold leading-snug flex-1 min-w-0">
+              <span className="line-clamp-3">{subtask.title}</span>
+            </DialogTitle>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground cursor-pointer"
+                  aria-label="Copiar identificador da tarefa"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(subtask.id)
+                    toast.success('ID copiado')
+                  }}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Copiar ID</TooltipContent>
+            </Tooltip>
+          </div>
         </DialogHeader>
 
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)} className="w-full">
@@ -357,15 +371,24 @@ export function SubtaskDetailsModal({
           </TabsList>
 
           {/* Tab: Detalhes */}
-          <TabsContent value="details" className="space-y-4">
+          <TabsContent value="details" className="space-y-4 mt-4 overflow-y-auto min-h-0 max-h-[calc(90vh-220px)] pr-2">
+          <WorkflowProgressBar
+            status={subtask.status}
+            variant="default"
+            showLabels={true}
+            showFooterRow={false}
+            className="w-full mb-1"
+            activeCustomActionLabel={subtask.activeActionButton?.name ?? null}
+          />
+          
           {subtask.description && (
-              <div className="bg-gray-50 p-3 rounded text-sm">
+              <div className="section-muted p-3 text-sm">
                 {subtask.description}
             </div>
           )}
           
           <div className="grid grid-cols-2 gap-3">
-            <div className="bg-gray-50 p-3 rounded border">
+            <div className="section-muted p-3">
                 <div className="flex items-center gap-2 mb-1 text-xs text-muted-foreground">
                   <User className="h-4 w-4" />
                   Responsável
@@ -375,7 +398,7 @@ export function SubtaskDetailsModal({
                 </p>
             </div>
             
-            <div className="bg-gray-50 p-3 rounded border">
+            <div className="section-muted p-3">
                 <div className="flex items-center gap-2 mb-1 text-xs text-muted-foreground">
                   <Calendar className="h-4 w-4" />
                   Prazo
@@ -395,18 +418,18 @@ export function SubtaskDetailsModal({
                 )
                 
                 return pendingDeps.length > 0 ? (
-                  <div className="bg-orange-50 p-3 rounded border border-orange-200">
+                  <div className="bg-warning/10 p-3 rounded-lg border border-warning/30">
                       <div className="flex items-start gap-2">
-                      <Link className="h-4 w-4 text-orange-500 mt-0.5" />
+                      <Link className="h-4 w-4 text-warning mt-0.5" />
                       <div className="flex-1">
-                          <p className="text-sm font-medium text-orange-800 mb-2">
+                          <p className="text-sm font-medium text-warning-foreground mb-2">
                             Pendentes ({pendingDeps.length})
                         </p>
                           <div className="space-y-2">
                           {pendingDeps.map((dependency: any) => (
-                              <div key={dependency.id} className="text-sm bg-white p-2 rounded border">
+                              <div key={dependency.id} className="text-sm bg-background p-2 rounded border">
                                 <div className="font-medium">{dependency.blocking.title}</div>
-                                <div className="text-xs text-gray-600 mt-1">
+                                <div className="text-xs text-muted-foreground mt-1">
                                   Status: {getStatusLabel(dependency.blocking.status)}
                                 </div>
                               </div>
@@ -420,10 +443,93 @@ export function SubtaskDetailsModal({
               </div>
             )}
 
-            <div className="pt-2 border-t">
-              <span className="text-sm text-muted-foreground">Status: </span>
-              <span className="font-medium text-sm">{getStatusLabel(subtask.status)}</span>
-            </div>
+            {/* Contato vinculado */}
+            {client && (
+              <div className="pt-4 mt-4 border-t space-y-3">
+                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                  <UserCircle className="h-4 w-4" />
+                  Contato
+                </div>
+                <div className="section-muted p-4 space-y-3">
+                  <div className="font-medium">{client.name}</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                    {client.phone && (
+                      <div className="flex items-center gap-2">
+                        <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <span>{client.phone}</span>
+                      </div>
+                    )}
+                    {client.email && (
+                      <div className="flex items-center gap-2">
+                        <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <a href={`mailto:${client.email}`} className="text-primary hover:underline truncate">
+                          {client.email}
+                        </a>
+                      </div>
+                    )}
+                    {client.address && (
+                      <div className="flex items-start gap-2 sm:col-span-2">
+                        <MapPin className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                        <span>{client.address}</span>
+                      </div>
+                    )}
+                  </div>
+                  {customAttributes.length > 0 && Object.keys(parsedCustomValues).length > 0 && (
+                    <div className="pt-3 border-t space-y-2">
+                      <div className="text-xs font-medium text-muted-foreground">Atributos personalizados</div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {customAttributes
+                          .sort((a, b) => a.order - b.order)
+                          .filter((attr) => {
+                            const v = parsedCustomValues[attr.id]
+                            if (v == null) return false
+                            if (attr.type === 'FILE') return Array.isArray(v) && v.length > 0
+                            return v !== ''
+                          })
+                          .map((attr) => {
+                            const value = parsedCustomValues[attr.id]
+                            if (attr.type === 'FILE' && Array.isArray(value)) {
+                              return (
+                                <div key={attr.id} className="text-sm space-y-1">
+                                  <span className="text-muted-foreground block">{attr.name}:</span>
+                                  <div className="flex flex-wrap gap-2">
+                                    {value.map((f: { fileName: string; filePath: string }, i: number) => (
+                                      <a
+                                        key={i}
+                                        href={f.filePath}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        download={f.fileName}
+                                        className="text-primary hover:underline text-xs font-medium"
+                                      >
+                                        {value.length > 1 ? `Anexo ${i + 1}` : 'Anexo'}
+                                      </a>
+                                    ))}
+                                  </div>
+                                </div>
+                              )
+                            }
+                            const displayValue =
+                              attr.type === 'BOOLEAN'
+                                ? value === true || value === 'true'
+                                  ? 'Sim'
+                                  : 'Não'
+                                : attr.type === 'DATE' && value
+                                  ? new Date(value as string).toLocaleDateString('pt-BR')
+                                  : String(value)
+                            return (
+                              <div key={attr.id} className="text-sm">
+                                <span className="text-muted-foreground">{attr.name}: </span>
+                                <span className="font-medium">{displayValue}</span>
+                              </div>
+                            )
+                          })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </TabsContent>
 
           {/* Tab: Comentários */}
@@ -435,7 +541,7 @@ export function SubtaskDetailsModal({
                   variant="ghost"
                   size="sm"
                   onClick={scrollToBottom}
-                  className="text-xs text-gray-500 hover:text-gray-700"
+                  className="text-xs text-muted-foreground hover:text-foreground"
                 >
                   Ir para o final
                 </Button>
@@ -460,7 +566,7 @@ export function SubtaskDetailsModal({
                     }
 
                     if (isRejectionComment && rejectionData) {
-                      // Comentário de reprovação - estilo Chatwoot
+                      // Comentário de reprovação
                       return (
                         <div key={comment.id} className="relative pl-4 border-l-4 border-l-red-400">
                           <div className="bg-red-50 border border-red-200 rounded-lg p-3">
@@ -492,14 +598,14 @@ export function SubtaskDetailsModal({
 
                     // Comentário normal
                     return (
-                      <div key={comment.id} className="bg-gray-50 p-3 rounded border">
+                      <div key={comment.id} className="bg-muted/30 p-3 rounded-lg border">
                         <div className="flex items-start justify-between mb-2">
                           <span className="font-medium text-sm">{comment.author.name}</span>
                           <span className="text-xs text-muted-foreground">
                             {formatDateTime(comment.createdAt)}
                           </span>
                         </div>
-                        <p className="text-sm text-gray-700">{comment.content}</p>
+                        <p className="text-sm text-foreground">{comment.content}</p>
                         
                         {/* Anexos do comentário */}
                         {comment.attachments && comment.attachments.length > 0 && (
@@ -525,14 +631,14 @@ export function SubtaskDetailsModal({
             {/* Anexos Pendentes */}
             {pendingAttachments.length > 0 && (
               <div className="space-y-2 pb-2 border-b">
-                <p className="text-xs font-medium text-gray-600">
+                <p className="text-xs font-medium text-muted-foreground">
                   Anexos prontos para enviar:
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {pendingAttachments.map((file, index) => (
                     <div
                       key={index}
-                      className="flex items-center gap-1 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-xs"
+                      className="flex items-center gap-1 px-2 py-1 bg-info/10 border border-info/30 rounded text-xs"
                     >
                       <span className="font-medium truncate max-w-[150px]">
                         {file.fileName}
@@ -604,7 +710,7 @@ export function SubtaskDetailsModal({
                   {checklist.map((item) => (
                     <div
                       key={item.id}
-                      className="flex items-center gap-3 p-2 bg-gray-50 rounded border hover:bg-gray-100 transition-colors"
+                      className="flex items-center gap-3 p-2 bg-muted/30 rounded-lg border hover:bg-muted/50 transition-colors"
                     >
                       <Checkbox
                         checked={item.checked}

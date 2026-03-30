@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { createTRPCRouter, publicProcedure, accountProcedure } from '@/server/api/trpc'
 import { SubtaskStatus, Priority, MainTaskStatus, UserRole, RecurringType, WeekDay } from '@prisma/client'
 import { DependencyService } from '@/lib/dependency-service'
+import { dispatchWebhooks } from '@/lib/webhook-dispatch'
 
 export const subtaskRouter = createTRPCRouter({
   // Criar subtarefa
@@ -86,18 +87,28 @@ export const subtaskRouter = createTRPCRouter({
       // Notificar usuário sobre nova atribuição
       if (input.assignedToId) {
         const notificationMessage = input.requiresApproval === false 
-          ? `Você foi designado para a subtarefa "${subtask.title}" ⚡ (aprovação automática)`
-          : `Você foi designado para a subtarefa "${subtask.title}"`
+          ? `Você foi designado para a tarefa "${subtask.title}" ⚡ (aprovação automática)`
+          : `Você foi designado para a tarefa "${subtask.title}"`
 
         await ctx.prisma.notification.create({
           data: {
-            title: 'Nova Subtarefa Atribuída',
+            title: 'Nova Tarefa Atribuída',
             message: notificationMessage,
             type: 'SUBTASK_ASSIGNED',
             userId: input.assignedToId,
           },
         })
       }
+
+      void dispatchWebhooks(subtask.mainTask.accountId, 'task.created', {
+        taskId: subtask.id,
+        mainTaskId: subtask.mainTaskId,
+        title: subtask.title,
+        status: subtask.status,
+        assignedToId: subtask.assignedToId,
+        assignedTo: subtask.assignedTo ? { id: subtask.assignedTo.id, name: subtask.assignedTo.name } : null,
+        createdAt: subtask.createdAt.toISOString(),
+      })
 
       return subtask
     }),
@@ -111,6 +122,7 @@ export const subtaskRouter = createTRPCRouter({
           mainTask: {
             include: {
               creator: true,
+              client: true,
             },
           },
           comments: {
@@ -124,6 +136,8 @@ export const subtaskRouter = createTRPCRouter({
               blocking: true,
             },
           },
+          // @ts-ignore
+          activeActionButton: true,
         },
         orderBy: { createdAt: 'desc' },
       })
@@ -148,6 +162,8 @@ export const subtaskRouter = createTRPCRouter({
               blocking: true,
             },
           },
+          // @ts-ignore
+          activeActionButton: true,
         },
         orderBy: { createdAt: 'asc' },
       })
@@ -168,9 +184,8 @@ export const subtaskRouter = createTRPCRouter({
       const userRole = input?.userRole
       const showAllTasks = input?.showAllTasks
       
-      // Se showAllTasks for true, ADMIN e OWNER veem todas as tarefas da conta
-      // Caso contrário, todos veem apenas suas próprias tarefas
-      const shouldShowAllTasks = showAllTasks && (userRole === UserRole.ADMIN || userRole === UserRole.OWNER)
+      // Se showAllTasks for true, ADMIN, OWNER e MANAGER veem todas as tarefas da conta
+      const shouldShowAllTasks = showAllTasks && [UserRole.ADMIN, UserRole.OWNER, UserRole.MANAGER].includes(userRole as UserRole)
       
       return ctx.prisma.subtask.findMany({
         where: {
@@ -187,6 +202,7 @@ export const subtaskRouter = createTRPCRouter({
           mainTask: {
             include: {
               creator: true,
+              client: true,
             },
           },
           dependencies: {
@@ -204,6 +220,8 @@ export const subtaskRouter = createTRPCRouter({
             },
             orderBy: { createdAt: 'desc' },
           },
+          // @ts-ignore
+          activeActionButton: true,
         },
         orderBy: { createdAt: 'desc' },
       })
@@ -254,17 +272,18 @@ export const subtaskRouter = createTRPCRouter({
           mainTask: {
             include: {
               creator: true,
+              client: true,
             },
           },
         },
       })
 
       if (!currentSubtask) {
-        throw new Error('Subtarefa não encontrada')
+        throw new Error('Tarefa não encontrada')
       }
 
       // Se estamos marcando como concluída, definir completedAt
-      if (data.status === SubtaskStatus.APPROVED || data.status === SubtaskStatus.APPROVED) {
+      if (data.status === SubtaskStatus.COMPLETED_PENDING || data.status === SubtaskStatus.APPROVED) {
         data.completedAt = new Date()
       }
 
@@ -272,6 +291,12 @@ export const subtaskRouter = createTRPCRouter({
       const updateData: any = { ...data }
       if (checklistItems !== undefined) {
         updateData.checklistItems = checklistItems.length > 0 ? JSON.stringify(checklistItems) : null
+      }
+
+      // Se o status está sendo alterado manualmente, limpamos o botão ativo
+      if (data.status) {
+        // @ts-ignore
+        updateData.activeActionButtonId = null
       }
       
       // Processar arrays de recorrência
@@ -333,6 +358,28 @@ export const subtaskRouter = createTRPCRouter({
         console.log('✅ Novas dependências criadas:', newDependencies.length)
       }
 
+      // Webhook: status alterado
+      if (data.status && data.status !== currentSubtask.status) {
+        const accountId = updatedSubtask.mainTask.accountId
+        const eventMap: Partial<Record<SubtaskStatus, string>> = {
+          [SubtaskStatus.IN_PROGRESS]: 'task.started',
+          [SubtaskStatus.BLOCKED]: 'task.blocked',
+          [SubtaskStatus.COMPLETED_PENDING]: 'task.completed',
+        }
+        const event = eventMap[data.status]
+        if (event && accountId) {
+          void dispatchWebhooks(accountId, event, {
+            taskId: updatedSubtask.id,
+            mainTaskId: updatedSubtask.mainTaskId,
+            title: updatedSubtask.title,
+            previousStatus: currentSubtask.status,
+            newStatus: data.status,
+            assignedTo: updatedSubtask.assignedTo ? { id: updatedSubtask.assignedTo.id, name: updatedSubtask.assignedTo.name } : null,
+            updatedAt: updatedSubtask.updatedAt.toISOString(),
+          })
+        }
+      }
+
       // Criar notificações baseadas na mudança de status
       if (data.status && data.status !== currentSubtask.status) {
         const notifications = []
@@ -340,8 +387,8 @@ export const subtaskRouter = createTRPCRouter({
         // Notificar criador da tarefa principal sobre conclusão
         if (data.status === SubtaskStatus.APPROVED || data.status === SubtaskStatus.APPROVED) {
           notifications.push({
-            title: 'Subtarefa Concluída',
-            message: `${updatedSubtask.assignedTo?.name || 'Alguém'} concluiu a subtarefa "${updatedSubtask.title}"`,
+            title: 'Tarefa Concluída',
+            message: `${updatedSubtask.assignedTo?.name || 'Alguém'} concluiu a tarefa "${updatedSubtask.title}"`,
             type: 'SUBTASK_COMPLETED' as const,
             userId: updatedSubtask.mainTask.createdBy,
           })
@@ -350,8 +397,8 @@ export const subtaskRouter = createTRPCRouter({
         // Notificar sobre bloqueio
         if (data.status === SubtaskStatus.BLOCKED) {
           notifications.push({
-            title: 'Subtarefa Bloqueada',
-            message: `A subtarefa "${updatedSubtask.title}" foi bloqueada`,
+            title: 'Tarefa Bloqueada',
+            message: `A tarefa "${updatedSubtask.title}" foi bloqueada`,
             type: 'SUBTASK_BLOCKED' as const,
             userId: updatedSubtask.mainTask.createdBy,
           })
@@ -370,7 +417,7 @@ export const subtaskRouter = createTRPCRouter({
         const allSubtasksCompleted = updatedSubtask.mainTask.subtasks.every(
           subtask => 
             subtask.id === id || 
-            subtask.status === SubtaskStatus.APPROVED || 
+            subtask.status === SubtaskStatus.COMPLETED_PENDING || 
             subtask.status === SubtaskStatus.APPROVED
         )
 
@@ -425,7 +472,7 @@ export const subtaskRouter = createTRPCRouter({
       })
 
       if (!dependent || !blockedBy) {
-        throw new Error('Uma ou ambas as subtarefas não foram encontradas')
+        throw new Error('Uma ou ambas as tarefas não foram encontradas')
       }
 
       // Verificar se não há dependência circular
@@ -481,22 +528,22 @@ export const subtaskRouter = createTRPCRouter({
       })
 
       if (!subtask) {
-        throw new Error('Subtarefa não encontrada')
+        throw new Error('Tarefa não encontrada')
       }
 
       const blockingDependencies = subtask.dependencies.filter(
-        dep => dep.blockedBy.status !== SubtaskStatus.APPROVED && dep.blockedBy.status !== SubtaskStatus.APPROVED
+        dep => dep.blocking && dep.blocking.status !== SubtaskStatus.APPROVED
       )
 
       return {
         canStart: blockingDependencies.length === 0,
         blockingDependencies: blockingDependencies.map(dep => ({
-          id: dep.blockedBy.id,
-          title: dep.blockedBy.title,
-          status: dep.blockedBy.status,
-          assignedTo: dep.blockedBy.assignedTo ? {
-            id: dep.blockedBy.assignedTo.id,
-            name: dep.blockedBy.assignedTo.name,
+          id: dep.blocking.id,
+          title: dep.blocking.title,
+          status: dep.blocking.status,
+          assignedTo: dep.blocking.assignedTo ? {
+            id: dep.blocking.assignedTo.id,
+            name: dep.blocking.assignedTo.name,
           } : null,
         })),
       }
@@ -531,8 +578,8 @@ export const subtaskRouter = createTRPCRouter({
         if (subtask) {
           await ctx.prisma.notification.create({
             data: {
-              title: 'Subtarefa bloqueada por dependências',
-              message: `${subtask.assignedTo?.name} concluiu a subtarefa "${subtask.title}", mas há dependências pendentes.`,
+              title: 'Tarefa bloqueada por dependências',
+              message: `${subtask.assignedTo?.name} concluiu a tarefa "${subtask.title}", mas há dependências pendentes.`,
               type: 'SUBTASK_BLOCKED',
               userId: subtask.mainTask.creator.id
             }
@@ -557,11 +604,36 @@ export const subtaskRouter = createTRPCRouter({
         if (subtask) {
           await ctx.prisma.notification.create({
             data: {
-              title: 'Subtarefa aguardando aprovação',
-              message: `${subtask.assignedTo?.name} concluiu a subtarefa "${subtask.title}" e aguarda sua aprovação.`,
+              title: 'Tarefa aguardando aprovação',
+              message: `${subtask.assignedTo?.name} concluiu a tarefa "${subtask.title}" e aguarda sua aprovação.`,
               type: 'SUBTASK_PENDING_APPROVAL',
               userId: subtask.mainTask.creator.id
             }
+          })
+
+          void dispatchWebhooks(subtask.mainTask.accountId, 'task.completed', {
+            taskId: subtask.id,
+            mainTaskId: subtask.mainTaskId,
+            title: subtask.title,
+            status: result.newStatus,
+            assignedTo: subtask.assignedTo ? { id: subtask.assignedTo.id, name: subtask.assignedTo.name } : null,
+          })
+        }
+      }
+
+      if (result.newStatus === SubtaskStatus.BLOCKED) {
+        const subtask = await ctx.prisma.subtask.findUnique({
+          where: { id: input.id },
+          include: { mainTask: true, assignedTo: true },
+        })
+        if (subtask) {
+          void dispatchWebhooks(subtask.mainTask.accountId, 'task.blocked', {
+            taskId: subtask.id,
+            mainTaskId: subtask.mainTaskId,
+            title: subtask.title,
+            status: result.newStatus,
+            assignedTo: subtask.assignedTo ? { id: subtask.assignedTo.id, name: subtask.assignedTo.name } : null,
+            pendingDependencies: result.pendingDependencies,
           })
         }
       }
@@ -610,14 +682,14 @@ export const subtaskRouter = createTRPCRouter({
       // Notificar responsável sobre aprovação
       const subtask = await ctx.prisma.subtask.findUnique({
         where: { id: input.id },
-        include: { assignedTo: true }
+        include: { assignedTo: true, mainTask: true }
       })
 
       if (subtask?.assignedTo) {
         await ctx.prisma.notification.create({
           data: {
-            title: 'Subtarefa aprovada',
-            message: `Sua subtarefa "${subtask.title}" foi aprovada pelo gestor.`,
+            title: 'Tarefa aprovada',
+            message: `Sua tarefa "${subtask.title}" foi aprovada pelo gestor.`,
             type: 'SUBTASK_APPROVED',
             userId: subtask.assignedTo.id
           }
@@ -638,8 +710,8 @@ export const subtaskRouter = createTRPCRouter({
           if (unblockedSubtask?.assignedTo) {
             await ctx.prisma.notification.create({
               data: {
-                title: 'Subtarefa desbloqueada',
-                message: `Sua subtarefa "${unblockedSubtask.title}" foi desbloqueada e aguarda aprovação.`,
+                title: 'Tarefa desbloqueada',
+                message: `Sua tarefa "${unblockedSubtask.title}" foi desbloqueada e aguarda aprovação.`,
                 type: 'SUBTASK_UNBLOCKED',
                 userId: unblockedSubtask.assignedTo.id
               }
@@ -649,11 +721,39 @@ export const subtaskRouter = createTRPCRouter({
           if (unblockedSubtask?.mainTask.creator) {
             await ctx.prisma.notification.create({
               data: {
-                title: 'Subtarefa liberada para aprovação',
-                message: `A subtarefa "${unblockedSubtask.title}" foi desbloqueada e aguarda sua aprovação.`,
+                title: 'Tarefa liberada para aprovação',
+                message: `A tarefa "${unblockedSubtask.title}" foi desbloqueada e aguarda sua aprovação.`,
                 type: 'SUBTASK_PENDING_APPROVAL',
                 userId: unblockedSubtask.mainTask.creator.id
               }
+            })
+          }
+        }
+      }
+
+      if (subtask?.mainTask) {
+        void dispatchWebhooks(subtask.mainTask.accountId, 'task.approved', {
+          taskId: subtask.id,
+          mainTaskId: subtask.mainTaskId,
+          title: subtask.title,
+          status: 'APPROVED',
+          assignedTo: subtask.assignedTo ? { id: subtask.assignedTo.id, name: subtask.assignedTo.name } : null,
+        })
+      }
+
+      if (result.unblockedSubtasks?.length) {
+        for (const unblockedId of result.unblockedSubtasks) {
+          const unblockedSubtask = await ctx.prisma.subtask.findUnique({
+            where: { id: unblockedId },
+            include: { assignedTo: true, mainTask: true },
+          })
+          if (unblockedSubtask?.mainTask) {
+            void dispatchWebhooks(unblockedSubtask.mainTask.accountId, 'task.unblocked', {
+              taskId: unblockedSubtask.id,
+              mainTaskId: unblockedSubtask.mainTaskId,
+              title: unblockedSubtask.title,
+              status: unblockedSubtask.status,
+              assignedTo: unblockedSubtask.assignedTo ? { id: unblockedSubtask.assignedTo.id, name: unblockedSubtask.assignedTo.name } : null,
             })
           }
         }
@@ -679,17 +779,28 @@ export const subtaskRouter = createTRPCRouter({
       // Notificar responsável sobre reprovação
       const subtask = await ctx.prisma.subtask.findUnique({
         where: { id: input.id },
-        include: { assignedTo: true }
+        include: { assignedTo: true, mainTask: true }
       })
 
       if (subtask?.assignedTo) {
         await ctx.prisma.notification.create({
           data: {
             title: 'Tarefa Reprovada',
-            message: `Sua subtarefa "${subtask.title}" foi reprovada.`,
+            message: `Sua tarefa "${subtask.title}" foi reprovada.`,
             type: 'SUBTASK_REJECTED',
             userId: subtask.assignedTo.id
           }
+        })
+      }
+
+      if (subtask?.mainTask) {
+        void dispatchWebhooks(subtask.mainTask.accountId, 'task.rejected', {
+          taskId: subtask.id,
+          mainTaskId: subtask.mainTaskId,
+          title: subtask.title,
+          status: 'REJECTED',
+          rejectionReason: input.reason,
+          assignedTo: subtask.assignedTo ? { id: subtask.assignedTo.id, name: subtask.assignedTo.name } : null,
         })
       }
 
@@ -727,7 +838,7 @@ export const subtaskRouter = createTRPCRouter({
       })
 
       if (!subtask) {
-        throw new Error('Subtarefa não encontrada')
+        throw new Error('Tarefa não encontrada')
       }
 
       const updatedSubtask = await ctx.prisma.subtask.update({
@@ -745,7 +856,7 @@ export const subtaskRouter = createTRPCRouter({
       await ctx.prisma.activityLog.create({
         data: {
           type: 'SUBTASK_REASSIGNED',
-          description: `Subtarefa reassignada para ${updatedSubtask.assignedTo?.name}`,
+          description: `Tarefa reassignada para ${updatedSubtask.assignedTo?.name}`,
           subtaskId: input.id,
           userId: input.managerId,
           metadata: JSON.stringify({
@@ -759,8 +870,8 @@ export const subtaskRouter = createTRPCRouter({
       if (updatedSubtask.assignedTo) {
         await ctx.prisma.notification.create({
           data: {
-            title: 'Nova subtarefa atribuída',
-            message: `Você foi atribuído à subtarefa "${subtask.title}".`,
+            title: 'Nova tarefa atribuída',
+            message: `Você foi atribuído à tarefa "${subtask.title}".`,
             type: 'SUBTASK_ASSIGNED',
             userId: updatedSubtask.assignedTo.id
           }
@@ -771,13 +882,21 @@ export const subtaskRouter = createTRPCRouter({
       if (subtask.assignedTo && subtask.assignedTo.id !== input.newAssigneeId) {
         await ctx.prisma.notification.create({
           data: {
-            title: 'Subtarefa reassignada',
-            message: `A subtarefa "${subtask.title}" foi reassignada para outro membro.`,
+            title: 'Tarefa reassignada',
+            message: `A tarefa "${subtask.title}" foi reassignada para outro membro.`,
             type: 'SUBTASK_REASSIGNED',
             userId: subtask.assignedTo.id
           }
         })
       }
+
+      void dispatchWebhooks(subtask.mainTask.accountId, 'task.reassigned', {
+        taskId: updatedSubtask.id,
+        mainTaskId: subtask.mainTaskId,
+        title: subtask.title,
+        previousAssignee: subtask.assignedTo ? { id: subtask.assignedTo.id, name: subtask.assignedTo.name } : null,
+        newAssignee: updatedSubtask.assignedTo ? { id: updatedSubtask.assignedTo.id, name: updatedSubtask.assignedTo.name } : null,
+      })
 
       return updatedSubtask
     }),

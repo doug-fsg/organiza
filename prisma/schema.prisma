@@ -1,0 +1,637 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  OWNER // Dono da conta
+  ADMIN // Administrador
+  MANAGER // Gerente
+  MEMBER // Membro
+  SUPPLIER // Fornecedor
+  FINANCIAL // Financeiro
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum MainTaskStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum SubtaskStatus {
+  TODO
+  IN_PROGRESS
+  BLOCKED
+  COMPLETED_PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ActivityType {
+  SUBTASK_CREATED
+  SUBTASK_STARTED
+  SUBTASK_PAUSED
+  SUBTASK_RESUMED
+  SUBTASK_COMPLETED
+  SUBTASK_BLOCKED
+  SUBTASK_UNBLOCKED
+  SUBTASK_APPROVED
+  SUBTASK_REJECTED
+  SUBTASK_REASSIGNED
+  DEPENDENCY_ADDED
+  DEPENDENCY_REMOVED
+  ESTIMATE_UPDATED
+  COMMENT_ADDED
+}
+
+enum NotificationType {
+  SUBTASK_ASSIGNED
+  SUBTASK_COMPLETED
+  SUBTASK_APPROVED
+  SUBTASK_REJECTED
+  SUBTASK_BLOCKED
+  SUBTASK_UNBLOCKED
+  SUBTASK_PENDING_APPROVAL
+  SUBTASK_REASSIGNED
+  GENERAL
+  SERVICE_PAYMENT_CREATED
+  SERVICE_PAYMENT_APPROVED
+  SERVICE_PAYMENT_REJECTED
+  SERVICE_PAYMENT_PAID
+}
+
+enum RecurringType {
+  DAILY
+  WEEKLY
+  BIWEEKLY // Quinzenal
+  MONTHLY
+  CUSTOM
+}
+
+enum WeekDay {
+  SUNDAY
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+}
+
+enum ServicePaymentStatus {
+  PENDING   // ⏳ Pendente (aguardando aprovação do gestor)
+  APPROVED  // ✅ Aprovado (aguardando pagamento)
+  PAID      // 💰 Pago (com comprovante)
+  REJECTED  // ❌ Recusado pelo gestor
+}
+
+enum CustomAttributeType {
+  TEXT
+  NUMBER
+  DATE
+  BOOLEAN
+  FILE
+  ACTION_BUTTON
+}
+
+// ============================================
+// MULTI-TENANT MODELS
+// ============================================
+
+model Account {
+  id        String   @id @default(cuid())
+  name      String // Nome da empresa/conta
+  slug      String   @unique // URL amigável
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  accountUsers           AccountUser[]
+  mainTasks              MainTask[]
+  servicePayments        ServicePayment[]
+  departments            Department[]
+  subtaskTemplates       SubtaskTemplate[]
+  clients                Client[]
+  clientCustomAttributes ClientCustomAttribute[]
+  apiKeys                ApiKey[]
+  webhooks               Webhook[]
+  taskFieldDefinitions   TaskFieldDefinition[]
+
+  @@map("accounts")
+}
+
+model Webhook {
+  id        String   @id @default(cuid())
+  accountId String
+  url       String   // URL de destino
+  secret    String?  // Para assinatura HMAC (opcional)
+  events    String   // JSON array: ["task.created", "project.created", ...]
+  name      String?  // Nome descritivo (ex: "Integração CRM")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  @@index([accountId])
+  @@map("webhooks")
+}
+
+model ApiKey {
+  id          String   @id @default(cuid())
+  accountId   String
+  name        String   // Nome descritivo (ex: "Integração CRM")
+  keyPrefix   String   // Primeiros 8 chars para identificação (ex: "sk_abc123")
+  keyHash     String   // Hash bcrypt da chave completa
+  createdBy   String   // userId que criou
+  lastUsedAt  DateTime?
+  createdAt   DateTime @default(now())
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  @@index([accountId])
+  @@index([keyPrefix])
+  @@map("api_keys")
+}
+
+model AccountUser {
+  id        String   @id @default(cuid())
+  userId    String
+  accountId String
+  role      UserRole @default(MEMBER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, accountId])
+  @@map("account_users")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  password      String // Hash da senha
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  accounts         AccountUser[] // Contas do usuário
+  createdTasks     MainTask[]     @relation("TaskCreator")
+  assignedSubtasks Subtask[]      @relation("SubtaskAssignee")
+  comments         Comment[]
+  notifications    Notification[]
+  activityLogs     ActivityLog[]
+  departmentUsers  DepartmentUser[]
+  
+  // Service Payment Relations
+  supplierServices ServicePayment[] @relation("ServiceSupplier")
+  approvedServices ServicePayment[] @relation("ServiceApprover")
+  rejectedServices ServicePayment[] @relation("ServiceRejector")
+  paidServices     ServicePayment[] @relation("ServicePayer")
+
+  @@map("users")
+}
+
+model MainTask {
+  id                  String           @id @default(cuid())
+  title               String
+  description         String?
+  status              MainTaskStatus   @default(NOT_STARTED)
+  priority            Priority         @default(MEDIUM)
+  deadline            DateTime?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  completedAt         DateTime?
+  createdBy           String
+  accountId           String // Multi-tenant
+  subtaskTemplateId   String?          // Modelo de subtarefas aplicado (workflow sequencial)
+  clientId            String?          // Cliente vinculado ao processo
+
+  // Relations
+  creator            User              @relation("TaskCreator", fields: [createdBy], references: [id])
+  account            Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  subtaskTemplate    SubtaskTemplate?  @relation(fields: [subtaskTemplateId], references: [id], onDelete: SetNull)
+  client             Client?           @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  subtasks           Subtask[]
+  departmentTasks    DepartmentTask[]
+
+  @@index([accountId])
+  @@index([subtaskTemplateId])
+  @@index([clientId])
+  @@map("main_tasks")
+}
+
+model Subtask {
+  id              String        @id @default(cuid())
+  title           String
+  description     String?
+  status          SubtaskStatus @default(TODO)
+  priority        Priority      @default(MEDIUM)
+  deadline        DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  completedAt     DateTime?
+  approvedAt      DateTime?
+  rejectedAt      DateTime?
+  estimatedHours  Int?
+  actualHours     Int?
+  mainTaskId      String
+  assignedToId    String?
+  approvedBy      String?
+  rejectedBy      String?
+  rejectionReason String?
+
+  // Approval settings
+  requiresApproval Boolean @default(true)
+
+  // Recurring task fields
+  isRecurring         Boolean        @default(false)
+  recurringType       RecurringType?
+  recurringInterval   Int? // Para CUSTOM (a cada X dias)
+  recurringWeekDays   String? // JSON array: ["MONDAY", "WEDNESDAY", "FRIDAY"]
+  recurringMonthDays  String? // JSON array: [1, 15, 30]
+  recurringEndDate    DateTime? // Quando a recorrência deve parar
+  skipWeekends        Boolean        @default(false)
+  skipHolidays        Boolean        @default(false)
+  
+  // Campos antigos (manter compatibilidade)
+  recurringDay        Int? // DEPRECATED - usar recurringMonthDays
+  recurringWeekDay    WeekDay? // DEPRECATED - usar recurringWeekDays
+  lastReopenedAt      DateTime?
+  nextReopenAt        DateTime?
+
+  // Checklist
+  checklistItems  String? // JSON array: [{ id, text, checked }]
+
+  // Relations
+  mainTask           MainTask            @relation(fields: [mainTaskId], references: [id], onDelete: Cascade)
+  assignedTo         User?               @relation("SubtaskAssignee", fields: [assignedToId], references: [id])
+  comments           Comment[]
+  dependencies       SubtaskDependency[] @relation("DependentSubtask")
+  blocking           SubtaskDependency[] @relation("BlockingSubtask")
+  activityLogs       ActivityLog[]
+  fieldValues        TaskFieldValue[]
+  
+  // Persistência de Smart Buttons
+  activeActionButtonId String?
+  activeActionButton   TaskFieldDefinition? @relation(fields: [activeActionButtonId], references: [id], onDelete: SetNull)
+
+  @@map("subtasks")
+}
+
+model SubtaskDependency {
+  id          String   @id @default(cuid())
+  dependentId String
+  blockedById String
+  createdAt   DateTime @default(now())
+
+  // Relations
+  dependent Subtask @relation("DependentSubtask", fields: [dependentId], references: [id], onDelete: Cascade)
+  blocking  Subtask @relation("BlockingSubtask", fields: [blockedById], references: [id], onDelete: Cascade)
+
+  @@unique([dependentId, blockedById])
+  @@map("subtask_dependencies")
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  subtaskId String
+  authorId  String
+  readBy    String?  // JSON array de user IDs que já leram
+
+  // Relations
+  subtask     Subtask              @relation(fields: [subtaskId], references: [id], onDelete: Cascade)
+  author      User                 @relation(fields: [authorId], references: [id])
+  attachments CommentAttachment[]
+
+  @@map("comments")
+}
+
+model CommentAttachment {
+  id           String   @id @default(cuid())
+  commentId    String
+  fileName     String   // Nome original do arquivo
+  fileSize     Int      // Tamanho em bytes
+  mimeType     String   // tipo MIME (image/png, application/pdf, etc)
+  filePath     String   // Caminho no servidor
+  uploadedAt   DateTime @default(now())
+  uploadedBy   String   // ID do usuário que fez upload
+
+  // Relations
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@map("comment_attachments")
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  title     String
+  message   String
+  type      NotificationType
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+  userId    String
+
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("notifications")
+}
+
+model ActivityLog {
+  id          String       @id @default(cuid())
+  type        ActivityType
+  description String
+  metadata    String? // JSON string for additional data
+  createdAt   DateTime     @default(now())
+  userId      String
+  subtaskId   String?
+
+  // Relations
+  user    User     @relation(fields: [userId], references: [id])
+  subtask Subtask? @relation(fields: [subtaskId], references: [id], onDelete: Cascade)
+
+  @@map("activity_logs")
+}
+
+model UserInvite {
+  id        String   @id @default(cuid())
+  email     String
+  name      String
+  accountId String
+  role      UserRole @default(MEMBER)
+  token     String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  createdBy String // ID do admin que criou o convite
+
+  @@index([token])
+  @@index([email])
+  @@map("user_invites")
+}
+
+// ============================================
+// SERVICE PAYMENT MODELS
+// ============================================
+
+model ServicePayment {
+  id              String                @id @default(cuid())
+  
+  // Dados do serviço
+  description     String                // Descrição do serviço
+  value           Float                 // Valor do serviço
+  serviceDate     DateTime              // Data do serviço
+  
+  // Status e fluxo
+  status          ServicePaymentStatus  @default(PENDING)
+  
+  // Relacionamentos
+  accountId       String                // Multi-tenant
+  supplierId      String                // Fornecedor que cadastrou
+  approvedById    String?               // Gestor que aprovou
+  rejectedById    String?               // Gestor que recusou
+  paidById        String?               // Financeiro que pagou
+  
+  // Datas
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  approvedAt      DateTime?
+  rejectedAt      DateTime?
+  paidAt          DateTime?
+  
+  // Motivos
+  rejectionReason String?               // Motivo da recusa
+  
+  // Relations
+  account         Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  supplier        User                  @relation("ServiceSupplier", fields: [supplierId], references: [id])
+  approvedBy      User?                 @relation("ServiceApprover", fields: [approvedById], references: [id])
+  rejectedBy      User?                 @relation("ServiceRejector", fields: [rejectedById], references: [id])
+  paidBy          User?                 @relation("ServicePayer", fields: [paidById], references: [id])
+  
+  // Anexos
+  attachments     ServicePaymentAttachment[]
+  paymentReceipt  ServicePaymentReceipt?
+  
+  @@index([accountId])
+  @@index([supplierId])
+  @@index([status])
+  @@map("service_payments")
+}
+
+model ServicePaymentAttachment {
+  id              String          @id @default(cuid())
+  servicePaymentId String
+  fileName        String
+  fileSize        Int
+  mimeType        String
+  filePath        String
+  uploadedAt      DateTime        @default(now())
+  uploadedBy      String
+  
+  // Relations
+  servicePayment ServicePayment  @relation(fields: [servicePaymentId], references: [id], onDelete: Cascade)
+  
+  @@map("service_payment_attachments")
+}
+
+model ServicePaymentReceipt {
+  id              String          @id @default(cuid())
+  servicePaymentId String         @unique
+  fileName        String
+  fileSize        Int
+  mimeType        String
+  filePath        String
+  uploadedAt      DateTime        @default(now())
+  uploadedBy      String          // Financeiro que fez upload
+  
+  // Relations
+  servicePayment ServicePayment  @relation(fields: [servicePaymentId], references: [id], onDelete: Cascade)
+  
+  @@map("service_payment_receipts")
+}
+
+// ============================================
+// DEPARTMENT MODELS
+// ============================================
+
+model Department {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  accountId   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  account         Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  departmentUsers DepartmentUser[]
+  departmentTasks DepartmentTask[]
+  
+  @@index([accountId])
+  @@map("departments")
+}
+
+model DepartmentUser {
+  id           String     @id @default(cuid())
+  departmentId String
+  userId       String
+  createdAt    DateTime   @default(now())
+  
+  // Relations
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([departmentId, userId])
+  @@map("department_users")
+}
+
+model DepartmentTask {
+  id           String     @id @default(cuid())
+  departmentId String
+  mainTaskId   String
+  createdAt    DateTime   @default(now())
+  
+  // Relations
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  mainTask   MainTask   @relation(fields: [mainTaskId], references: [id], onDelete: Cascade)
+  
+  @@unique([departmentId, mainTaskId])
+  @@map("department_tasks")
+}
+
+// ============================================
+// SUBTASK TEMPLATE (Modelo de Subtarefas)
+// ============================================
+
+/// Modelo reutilizável de subtarefas. Define etapas em sequência para aplicar em projetos.
+/// Cada etapa vira uma subtarefa. Workflow sequencial: não pode pular etapas.
+model SubtaskTemplate {
+  id           String   @id @default(cuid())
+  name         String   // Ex: "Venda de imóvel"
+  description  String?
+  accountId    String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  /// Etapas do workflow. JSON: [{ title, description?, requiresApproval }]
+  stagesData   String
+
+  // Relations
+  account   Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  mainTasks MainTask[]
+
+  @@index([accountId])
+  @@map("subtask_templates")
+}
+
+// ============================================
+// CRM MODELS
+// ============================================
+
+model ClientCustomAttribute {
+  id        String               @id @default(cuid())
+  accountId String
+  name      String
+  type      CustomAttributeType  @default(TEXT)
+  order     Int                  @default(0)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  @@index([accountId])
+  @@map("client_custom_attributes")
+}
+
+model Client {
+  id           String   @id @default(cuid())
+  accountId    String
+  name         String
+  phone        String?
+  email        String?
+  address      String?
+  customValues String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  account   Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  mainTasks MainTask[]
+  @@index([accountId])
+  @@map("clients")
+}
+
+// ============================================
+// TASK CUSTOM FIELDS & AUTOMATIONS (SMART FIELDS)
+// ============================================
+
+model TaskFieldDefinition {
+  id          String   @id @default(cuid())
+  accountId   String
+  name        String
+  type        CustomAttributeType // (TEXT, NUMBER, DATE, BOOLEAN, FILE, etc)
+  color       String?  // Cor do botão (ex: hex ou nome da cor)
+  projectIds  String?  // JSON array de IDs de projeto (MainTask)
+  options     String? // Relevante se for tipo SELECT (armazenado como JSON string)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  account     Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  values               TaskFieldValue[]
+  actions              FieldAction[]
+  subtasksApplyingThis Subtask[]
+
+  @@index([accountId])
+  @@map("task_field_definitions")
+}
+
+model TaskFieldValue {
+  id              String   @id @default(cuid())
+  fieldDefId      String
+  subtaskId       String
+  value           String   // Valor serializado (JSON string ou string plana)
+  updatedAt       DateTime @updatedAt
+  
+  // Relations
+  fieldDefinition TaskFieldDefinition @relation(fields: [fieldDefId], references: [id], onDelete: Cascade)
+  subtask         Subtask             @relation(fields: [subtaskId], references: [id], onDelete: Cascade)
+
+  @@index([fieldDefId])
+  @@index([subtaskId])
+  @@unique([fieldDefId, subtaskId]) // Uma subtask só tem um valor genérico
+  @@map("task_field_values")
+}
+
+model FieldAction {
+  id               String   @id @default(cuid())
+  fieldDefId       String
+  triggerCondition String   // JSON com regra: { "operator": "EQUALS", "value": "true" }
+  actionType       String   // "CHANGE_STATUS", "COMPLETE_MAINTASK", "ADD_COMMENT", "FIRE_WEBHOOK", etc.
+  actionPayload    String   // JSON com os dados da ação: { "status": "COMPLETED_PENDING" }
+  createdAt        DateTime @default(now())
+  
+  // Relations
+  fieldDefinition  TaskFieldDefinition @relation(fields: [fieldDefId], references: [id], onDelete: Cascade)
+
+  @@index([fieldDefId])
+  @@map("field_actions")
+}

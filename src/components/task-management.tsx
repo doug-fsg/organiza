@@ -13,13 +13,17 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Progress } from '@/components/ui/progress'
+import { WorkflowProgressBarAggregate } from '@/components/workflow-progress-bar'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { Plus, Users, Clock, AlertTriangle, CheckCircle2, MoreHorizontal, GitBranch, Edit, PlusCircle, Trash2 } from 'lucide-react'
+import { Plus, Users, Clock, AlertTriangle, CheckCircle2, MoreHorizontal, GitBranch, Edit, PlusCircle, Trash2, Layers, ChevronLeft, ChevronRight, Copy } from 'lucide-react'
 import { api } from '@/lib/api'
 import toast from 'react-hot-toast'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger } from '@/components/ui/dropdown-menu'
+import { getPriorityClasses } from '@/lib/theme-utils'
 import { RecurringTaskConfig } from './recurring-task-config'
+import { DepartmentSelector } from './department/department-selector'
+import { ClientSelector } from './client/client-selector'
+import { ClientBadge } from './client/client-badge'
 
 interface User {
   id: string
@@ -41,6 +45,15 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
   const [selectedTaskForEdit, setSelectedTaskForEdit] = useState<any>(null)
   const [selectedSubtaskForEdit, setSelectedSubtaskForEdit] = useState<any>(null)
   const [taskToDelete, setTaskToDelete] = useState<any>(null)
+  const [applyModelConfirm, setApplyModelConfirm] = useState<{
+    modelId: string
+    modelName: string
+    mainTaskId: string
+  } | null>(null)
+  const [clientFilterId, setClientFilterId] = useState<string | null>(null)
+  const [statusFilter, setStatusFilter] = useState<MainTaskStatus | 'ALL'>('OPEN') // Filtro padrão: projetos em aberto
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 10
 
   // Estados do formulário de tarefa principal
   const [mainTaskForm, setMainTaskForm] = useState<{
@@ -48,11 +61,15 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
     description: string
     priority: Priority
     deadline: string
+    departmentIds: string[]
+    clientId: string | null
   }>({
     title: '',
     description: '',
     priority: Priority.MEDIUM,
     deadline: '',
+    departmentIds: [],
+    clientId: null,
   })
 
   // Estados do formulário de edição de tarefa principal
@@ -62,12 +79,16 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
     priority: Priority
     deadline: string
     status: MainTaskStatus
+    departmentIds: string[]
+    clientId: string | null
   }>({
     title: '',
     description: '',
     priority: Priority.MEDIUM,
     deadline: '',
     status: MainTaskStatus.NOT_STARTED,
+    departmentIds: [],
+    clientId: null,
   })
 
   // Estados do formulário de edição de subtarefa
@@ -149,8 +170,28 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
   const utils = api.useUtils()
 
   // Queries
-  const { data: mainTasks, isLoading } = api.mainTask.getAll.useQuery()
+  const { data: allMainTasks, isLoading } = api.mainTask.getAll.useQuery(
+    clientFilterId ? { clientId: clientFilterId } : undefined
+  )
+
+  // Filtrar tarefas por status
+  const filteredTasks = allMainTasks?.filter(task => {
+    if (statusFilter === 'ALL') return true
+    if (statusFilter === 'OPEN') return task.status !== MainTaskStatus.COMPLETED
+    return task.status === statusFilter
+  }) || []
+
+  // Paginação
+  const totalItems = filteredTasks.length
+  const totalPages = Math.ceil(totalItems / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const endIndex = startIndex + itemsPerPage
+  const mainTasks = filteredTasks.slice(startIndex, endIndex)
+
+  // Reset página quando filtros mudam
+  const resetPagination = () => setCurrentPage(1)
   const { data: users } = api.user.getAll.useQuery()
+  const { data: subtaskModels } = api.subtaskTemplate.getAll.useQuery()
   const { data: mainTaskSubtasks } = api.subtask.getByMainTask.useQuery(
     { mainTaskId: selectedMainTaskId },
     { enabled: !!selectedMainTaskId }
@@ -161,11 +202,11 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
     onSuccess: () => {
       utils.mainTask.getAll.invalidate()
       setIsCreateDialogOpen(false)
-      setMainTaskForm({ title: '', description: '', priority: Priority.MEDIUM, deadline: '' })
-      toast.success('Tarefa principal criada com sucesso!')
+      setMainTaskForm({ title: '', description: '', priority: Priority.MEDIUM, deadline: '', departmentIds: [], clientId: null })
+      toast.success('Projeto criado com sucesso!')
     },
     onError: (error) => {
-      toast.error(`Erro ao criar tarefa: ${error.message}`)
+      toast.error(`Erro ao criar projeto: ${error.message}`)
     },
   })
 
@@ -174,20 +215,20 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
       utils.mainTask.getAll.invalidate()
       setIsEditDialogOpen(false)
       setSelectedTaskForEdit(null)
-      toast.success('Tarefa principal atualizada com sucesso!')
+      toast.success('Projeto atualizado com sucesso!')
     },
     onError: (error) => {
-      toast.error(`Erro ao atualizar tarefa: ${error.message}`)
+      toast.error(`Erro ao atualizar projeto: ${error.message}`)
     },
   })
 
   const deleteMainTask = api.mainTask.delete.useMutation({
     onSuccess: () => {
       utils.mainTask.getAll.invalidate()
-      toast.success('Tarefa principal deletada com sucesso!')
+      toast.success('Projeto deletado com sucesso!')
     },
     onError: (error) => {
-      toast.error(`Erro ao deletar tarefa: ${error.message}`)
+      toast.error(`Erro ao deletar projeto: ${error.message}`)
     },
   })
 
@@ -196,16 +237,16 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
       utils.mainTask.getAll.invalidate()
       setIsSubtaskEditDialogOpen(false)
       setSelectedSubtaskForEdit(null)
-      toast.success('Subtarefa atualizada com sucesso!')
+      toast.success('Tarefa atualizada com sucesso!')
     },
     onError: (error) => {
-      toast.error(`Erro ao atualizar subtarefa: ${error.message}`)
+      toast.error(`Erro ao atualizar tarefa: ${error.message}`)
     },
   })
 
   const createSubtask = api.subtask.create.useMutation({
     onError: (error) => {
-      toast.error(`Erro ao criar subtarefa: ${error.message}`)
+      toast.error(`Erro ao criar tarefa: ${error.message}`)
     },
   })
 
@@ -219,11 +260,20 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
   const deleteSubtask = api.subtask.delete.useMutation({
     onSuccess: () => {
       utils.mainTask.getAll.invalidate()
-      toast.success('Subtarefa deletada com sucesso!')
+      toast.success('Tarefa deletada com sucesso!')
     },
     onError: (error) => {
-      toast.error(`Erro ao deletar subtarefa: ${error.message}`)
+      toast.error(`Erro ao deletar tarefa: ${error.message}`)
     },
+  })
+
+  const applyModelMutation = api.subtaskTemplate.applyToExistingProject.useMutation({
+    onSuccess: () => {
+      utils.mainTask.getAll.invalidate()
+      setApplyModelConfirm(null)
+      toast.success('Modelo aplicado! Tarefas substituídas.')
+    },
+    onError: (err) => toast.error(err.message),
   })
 
   const handleCreateMainTask = () => {
@@ -237,19 +287,23 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
       description: mainTaskForm.description || undefined,
       priority: mainTaskForm.priority,
       deadline: mainTaskForm.deadline ? new Date(mainTaskForm.deadline) : undefined,
-      createdBy: currentUser.id,
+      departmentIds: mainTaskForm.departmentIds.length > 0 ? mainTaskForm.departmentIds : undefined,
+      clientId: mainTaskForm.clientId ?? undefined,
     })
   }
 
   const handleEditTask = (task: any) => {
     setSelectedTaskForEdit(task)
-    setSelectedTaskForDetails(task) // Usar o mesmo estado para detalhes
+    setSelectedTaskForDetails(task)
+    const currentDepartmentIds = task.departmentTasks?.map((dt: any) => dt.departmentId) || []
     setEditTaskForm({
       title: task.title,
       description: task.description || '',
       priority: task.priority,
       deadline: task.deadline ? new Date(task.deadline).toISOString().split('T')[0] : '',
       status: task.status,
+      departmentIds: currentDepartmentIds,
+      clientId: task.clientId ?? null,
     })
     setIsEditDialogOpen(true)
   }
@@ -278,6 +332,8 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
       priority: editTaskForm.priority,
       deadline: editTaskForm.deadline ? new Date(editTaskForm.deadline) : undefined,
       status: editTaskForm.status,
+      departmentIds: editTaskForm.departmentIds.length > 0 ? editTaskForm.departmentIds : [],
+      clientId: editTaskForm.clientId,
     })
   }
 
@@ -364,7 +420,7 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
 
   const handleCreateSubtask = async () => {
     if (!subtaskForm.title || !selectedMainTaskId) {
-      toast.error('Título e tarefa principal são obrigatórios')
+      toast.error('Título do projeto é obrigatório')
       return
     }
 
@@ -402,7 +458,7 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
             console.error('Erro ao criar dependência:', error)
           }
         }
-        toast.success('Subtarefa e dependências criadas com sucesso!')
+        toast.success('Tarefa e dependências criadas com sucesso!')
       }
 
       // Reset form
@@ -426,23 +482,12 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
       })
       setIsSubtaskDialogOpen(false)
     } catch (error) {
-      toast.error('Erro ao criar subtarefa')
+      toast.error('Erro ao criar tarefa')
     }
   }
 
   const getPriorityColor = (priority: Priority) => {
-    switch (priority) {
-      case Priority.URGENT:
-        return 'bg-red-100 text-red-800'
-      case Priority.HIGH:
-        return 'bg-orange-100 text-orange-800'
-      case Priority.MEDIUM:
-        return 'bg-yellow-100 text-yellow-800'
-      case Priority.LOW:
-        return 'bg-green-100 text-green-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
-    }
+    return getPriorityClasses(priority)
   }
 
   const getStatusColor = (status: MainTaskStatus) => {
@@ -465,17 +510,11 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
     return new Date(date).toLocaleDateString('pt-BR')
   }
 
-  const calculateProgress = (subtasks: any[]) => {
-    if (subtasks.length === 0) return 0
-    const completed = subtasks.filter(s => s.status === 'COMPLETED' || s.status === 'APPROVED').length
-    return Math.round((completed / subtasks.length) * 100)
-  }
-
   if (isLoading) {
     return (
       <div className="space-y-6">
         <div className="flex justify-between items-center">
-          <h2 className="text-2xl font-bold">Gerenciamento de Tarefas</h2>
+          <h2 className="text-2xl font-bold">Gerenciamento de Projetos</h2>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {[1, 2, 3].map((i) => (
@@ -495,21 +534,21 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">Gerenciamento de Tarefas</h2>
+        <h2 className="text-2xl font-bold">Gerenciamento de Projetos</h2>
         <div className="flex space-x-2">
           <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
             <DialogTrigger asChild>
               <Button>
                 <Plus className="h-4 w-4 mr-2" />
-                Nova Tarefa Principal
+                Novo Projeto
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>Criar Tarefa Principal</DialogTitle>
-                <DialogDescription>
-                  Crie uma nova tarefa principal que pode conter múltiplas subtarefas
-                </DialogDescription>
+<DialogTitle>Criar Projeto</DialogTitle>
+            <DialogDescription>
+              Crie um novo projeto que pode conter múltiplas tarefas
+            </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <div className="space-y-2">
@@ -559,13 +598,41 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
                     />
                   </div>
                 </div>
+
+                <div className="space-y-2">
+                  <Label>Cliente vinculado</Label>
+                  <ClientSelector
+                    value={mainTaskForm.clientId}
+                    onChange={(id) => setMainTaskForm(prev => ({ ...prev, clientId: id }))}
+                    placeholder="Selecionar cliente (opcional)"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Setores</Label>
+                  <DepartmentSelector
+                    value={mainTaskForm.departmentIds}
+                    onChange={(ids) => setMainTaskForm(prev => ({ ...prev, departmentIds: ids }))}
+                    multiple={true}
+                  />
+                </div>
                 
                 <div className="flex justify-end space-x-2">
-                  <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
+                  <Button variant="outline" onClick={() => {
+                    setIsCreateDialogOpen(false)
+                    setMainTaskForm({
+                      title: '',
+                      description: '',
+                      priority: Priority.MEDIUM,
+                      deadline: '',
+                      departmentIds: [],
+                      clientId: null,
+                    })
+                  }}>
                     Cancelar
                   </Button>
                   <Button onClick={handleCreateMainTask} disabled={createMainTask.isPending}>
-                    {createMainTask.isPending ? 'Criando...' : 'Criar Tarefa'}
+                    {createMainTask.isPending ? 'Criando...' : 'Criar Projeto'}
                   </Button>
                 </div>
               </div>
@@ -574,75 +641,61 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
         </div>
       </div>
 
-      {/* Cards de Resumo */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="flex items-center p-6">
-            <div className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                <Clock className="h-4 w-4 text-blue-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{mainTasks?.filter(t => t.status === MainTaskStatus.NOT_STARTED).length || 0}</p>
-                <p className="text-xs text-muted-foreground">Não Iniciadas</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="flex items-center p-6">
-            <div className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center">
-                <AlertTriangle className="h-4 w-4 text-orange-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{mainTasks?.filter(t => t.status === MainTaskStatus.IN_PROGRESS).length || 0}</p>
-                <p className="text-xs text-muted-foreground">Em Andamento</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="flex items-center p-6">
-            <div className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                <CheckCircle2 className="h-4 w-4 text-green-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{mainTasks?.filter(t => t.status === MainTaskStatus.COMPLETED).length || 0}</p>
-                <p className="text-xs text-muted-foreground">Concluídas</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="flex items-center p-6">
-            <div className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
-                <Users className="h-4 w-4 text-gray-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{mainTasks?.reduce((acc, task) => acc + task.subtasks.length, 0) || 0}</p>
-                <p className="text-xs text-muted-foreground">Total Subtarefas</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
 
-      {/* Tabela de Tarefas Principais */}
+      {/* Tabela de Projetos */}
       <Card>
         <CardHeader>
-          <CardTitle>Tarefas Principais</CardTitle>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <CardTitle>Projetos</CardTitle>
+              <span className="state-message-sm">
+                {totalItems} {totalItems === 1 ? 'projeto' : 'projetos'}
+              </span>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Status:</span>
+                <Select 
+                  value={statusFilter} 
+                  onValueChange={(value: MainTaskStatus | 'ALL' | 'OPEN') => {
+                    setStatusFilter(value)
+                    resetPagination()
+                  }}
+                >
+                  <SelectTrigger className="w-[150px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="OPEN">Em Aberto</SelectItem>
+                    <SelectItem value="ALL">Todos</SelectItem>
+                    <SelectItem value="NOT_STARTED">Não Iniciados</SelectItem>
+                    <SelectItem value="IN_PROGRESS">Em Andamento</SelectItem>
+                    <SelectItem value="COMPLETED">Concluídos</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Contato:</span>
+                <ClientSelector
+                  value={clientFilterId}
+                  onChange={(value) => {
+                    setClientFilterId(value)
+                    resetPagination()
+                  }}
+                  placeholder="Todos"
+                  className="w-[150px]"
+                  filterMode
+                />
+              </div>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Título</TableHead>
+                <TableHead>Contato</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Prioridade</TableHead>
                 <TableHead>Progresso</TableHead>
@@ -650,15 +703,20 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {mainTasks?.map((task) => {
-                const progress = calculateProgress(task.subtasks)
-                return (
+              {mainTasks?.map((task) => (
                   <TableRow key={task.id}>
                     <TableCell>
                       <div>
                         <p className="font-medium">{task.title}</p>
-                        <p className="text-sm text-muted-foreground">{task.subtasks.length} subtarefas</p>
+                        <p className="text-sm text-muted-foreground">{task.subtasks.length} tarefas</p>
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      {task.client ? (
+                        <ClientBadge name={task.client.name} />
+                      ) : (
+                        <span className="text-sm text-muted-foreground italic">—</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge className={getStatusColor(task.status)}>
@@ -677,34 +735,92 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <div className="space-y-1">
-                        <Progress value={progress} className="w-16" />
-                        <p className="text-xs text-muted-foreground">{progress}%</p>
+                      <div className="min-w-[140px]">
+                        <WorkflowProgressBarAggregate
+                          subtasks={task.subtasks as any}
+                          showLabels={true}
+                        />
                       </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center space-x-2">
+                        <DropdownMenu>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 w-8 p-0 hover:bg-blue-100 hover:text-blue-600"
+                                  >
+                                    <PlusCircle className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Adicionar tarefa ou aplicar modelo</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                          <DropdownMenuContent align="start">
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setSelectedMainTaskId(task.id)
+                                setIsSubtaskDialogOpen(true)
+                              }}
+                            >
+                              <PlusCircle className="h-4 w-4 mr-2" />
+                              Adicionar tarefa
+                            </DropdownMenuItem>
+                            {subtaskModels && subtaskModels.length > 0 && (
+                              <DropdownMenuSub>
+                                <DropdownMenuSubTrigger>
+                                  <Layers className="h-4 w-4 mr-2" />
+                                  Aplicar modelo
+                                </DropdownMenuSubTrigger>
+                                <DropdownMenuSubContent>
+                                  {subtaskModels.map((model) => (
+                                    <DropdownMenuItem
+                                      key={model.id}
+                                      onClick={() =>
+                                        setApplyModelConfirm({
+                                          modelId: model.id,
+                                          modelName: model.name,
+                                          mainTaskId: task.id,
+                                        })
+                                      }
+                                      disabled={applyModelMutation.isPending}
+                                    >
+                                      {model.name}
+                                    </DropdownMenuItem>
+                                  ))}
+                                </DropdownMenuSubContent>
+                              </DropdownMenuSub>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                        
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button 
-                                variant="ghost" 
+                              <Button
+                                variant="ghost"
                                 size="sm"
                                 onClick={() => {
-                                  setSelectedMainTaskId(task.id)
-                                  setIsSubtaskDialogOpen(true)
+                                  navigator.clipboard.writeText(task.id)
+                                  toast.success('ID do projeto copiado!')
                                 }}
-                                className="h-8 w-8 p-0 hover:bg-blue-100 hover:text-blue-600"
+                                className="h-8 w-8 p-0 hover:bg-muted"
                               >
-                                <PlusCircle className="h-4 w-4" />
+                                <Copy className="h-4 w-4" />
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent>
-                              <p>Adicionar Subtarefa</p>
+                              <p>Copiar ID do projeto</p>
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
-                        
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -718,7 +834,7 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent>
-                              <p>Editar Tarefa</p>
+                              <p>Editar Projeto</p>
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
@@ -739,14 +855,14 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
                                 </AlertDialogTrigger>
                               </TooltipTrigger>
                               <TooltipContent>
-                                <p>Deletar Tarefa</p>
+                                <p>Deletar Projeto</p>
                               </TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
                           
                           <AlertDialogContent className="sm:max-w-[400px]">
                             <AlertDialogHeader>
-                              <AlertDialogTitle>Deletar Tarefa</AlertDialogTitle>
+                              <AlertDialogTitle>Deletar Projeto</AlertDialogTitle>
                               <AlertDialogDescription>
                                 Tem certeza que deseja deletar "{taskToDelete?.title}"? Esta ação não pode ser desfeita.
                               </AlertDialogDescription>
@@ -768,20 +884,81 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
                       </div>
                     </TableCell>
                   </TableRow>
-                )
-              })}
+              ))}
             </TableBody>
           </Table>
+          
+          {/* Paginação */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-6 py-4 border-t">
+              <div className="flex items-center gap-2">
+                <span className="state-message-sm">
+                  Página {currentPage} de {totalPages}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Anterior
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  Próxima
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      <AlertDialog
+        open={!!applyModelConfirm}
+        onOpenChange={(open) => !open && setApplyModelConfirm(null)}
+      >
+        <AlertDialogContent className="sm:max-w-[340px]">
+          <AlertDialogHeader className="space-y-1">
+            <AlertDialogTitle className="text-base">
+              Aplicar modelo
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-sm">
+              As tarefas atuais serão removidas e substituídas pelas etapas do modelo "{applyModelConfirm?.modelName}". Deseja continuar?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-1 sm:gap-0">
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() =>
+                applyModelConfirm &&
+                applyModelMutation.mutate({
+                  subtaskTemplateId: applyModelConfirm.modelId,
+                  mainTaskId: applyModelConfirm.mainTaskId,
+                })
+              }
+              disabled={applyModelMutation.isPending}
+            >
+              {applyModelMutation.isPending ? 'Aplicando...' : 'Confirmar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Dialog para Criar Subtarefa */}
       <Dialog open={isSubtaskDialogOpen} onOpenChange={setIsSubtaskDialogOpen}>
         <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Criar Subtarefa</DialogTitle>
+            <DialogTitle>Criar Tarefa</DialogTitle>
             <DialogDescription>
-              Adicione uma nova subtarefa à tarefa principal selecionada
+              Adicione uma nova tarefa ao projeto selecionado
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -801,7 +978,7 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
                 id="subtask-description"
                 value={subtaskForm.description}
                 onChange={(e) => setSubtaskForm(prev => ({ ...prev, description: e.target.value }))}
-                placeholder="Descrição detalhada da subtarefa..."
+                placeholder="Descrição detalhada da tarefa..."
                 rows={2}
               />
             </div>
@@ -882,7 +1059,7 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
                 </div>
                 <div className="space-y-2 max-h-32 overflow-y-auto border rounded p-3">
                   <p className="text-xs text-muted-foreground">
-                    Selecione as subtarefas que devem ser concluídas antes desta poder ser iniciada:
+                    Selecione as tarefas que devem ser concluídas antes desta poder ser iniciada:
                   </p>
                   {mainTaskSubtasks.map((subtask) => (
                     <div key={subtask.id} className="flex items-center space-x-2">
@@ -944,7 +1121,7 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
                     </p>
                   </div>
                   {!subtaskForm.requiresApproval && (
-                    <Badge variant="secondary" className="text-xs bg-yellow-100 text-yellow-800">
+                    <Badge variant="secondary" className={`text-xs ${getPriorityClasses('MEDIUM')}`}>
                       ⚡ Auto
                     </Badge>
                   )}
@@ -973,7 +1150,7 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
                 onClick={handleCreateSubtask} 
                 disabled={createSubtask.isPending || addDependency.isPending}
               >
-                {createSubtask.isPending || addDependency.isPending ? 'Criando...' : 'Criar Subtarefa'}
+                {createSubtask.isPending || addDependency.isPending ? 'Criando...' : 'Criar Tarefa'}
               </Button>
             </div>
           </div>
@@ -990,7 +1167,7 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
               Detalhes e Edição da Tarefa
             </DialogTitle>
             <DialogDescription>
-              Visualize e edite as informações da tarefa principal e suas subtarefas
+              Visualize e edite as informações do projeto e suas tarefas
             </DialogDescription>
           </DialogHeader>
           
@@ -998,7 +1175,7 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
             <div className="space-y-6">
               {/* Seção de Edição da Tarefa Principal */}
               <div className="space-y-4">
-                <h3 className="text-lg font-semibold">Informações da Tarefa</h3>
+                <h3 className="text-lg font-semibold">Informações do Projeto</h3>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
@@ -1064,12 +1241,30 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
                     />
                   </div>
                 </div>
+
+                <div className="space-y-2">
+                  <Label>Cliente vinculado</Label>
+                  <ClientSelector
+                    value={editTaskForm.clientId}
+                    onChange={(id) => setEditTaskForm(prev => ({ ...prev, clientId: id }))}
+                    placeholder="Selecionar cliente (opcional)"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Setores</Label>
+                  <DepartmentSelector
+                    value={editTaskForm.departmentIds}
+                    onChange={(ids) => setEditTaskForm(prev => ({ ...prev, departmentIds: ids }))}
+                    multiple={true}
+                  />
+                </div>
               </div>
 
               {/* Seção de Subtarefas */}
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold">Subtarefas ({selectedTaskForDetails.subtasks.length})</h3>
+                  <h3 className="text-lg font-semibold">Tarefas ({selectedTaskForDetails.subtasks.length})</h3>
                   <Button
                     size="sm"
                     onClick={() => {
@@ -1078,14 +1273,14 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
                     }}
                   >
                     <Plus className="h-4 w-4 mr-2" />
-                    Nova Subtarefa
+                    Nova Tarefa
                   </Button>
                 </div>
                 
                 <div className="space-y-3 max-h-60 overflow-y-auto border rounded-lg p-4">
                   {selectedTaskForDetails.subtasks.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-4">
-                      Nenhuma subtarefa criada ainda
+                      Nenhuma tarefa criada ainda
                     </p>
                   ) : (
                     selectedTaskForDetails.subtasks.map((subtask: any) => (
@@ -1120,7 +1315,7 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
                                   </Button>
                                 </TooltipTrigger>
                                 <TooltipContent>
-                                  <p>Editar Subtarefa</p>
+                                  <p>Editar Tarefa</p>
                                 </TooltipContent>
                               </Tooltip>
                             </TooltipProvider>
@@ -1141,7 +1336,7 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
                                       <AlertDialogHeader>
                                         <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
                                         <AlertDialogDescription>
-                                          Tem certeza que deseja deletar a subtarefa "{subtask.title}"? 
+                                          Tem certeza que deseja deletar a tarefa "{subtask.title}"? 
                                           Esta ação não pode ser desfeita.
                                         </AlertDialogDescription>
                                       </AlertDialogHeader>
@@ -1158,7 +1353,7 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
                                   </AlertDialog>
                                 </TooltipTrigger>
                                 <TooltipContent>
-                                  <p>Deletar Subtarefa</p>
+                                  <p>Deletar Tarefa</p>
                                 </TooltipContent>
                               </Tooltip>
                             </TooltipProvider>
@@ -1234,7 +1429,7 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Edit className="h-5 w-5" />
-              Editar Subtarefa
+              Editar Tarefa
             </DialogTitle>
           </DialogHeader>
           
@@ -1247,7 +1442,7 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
                   id="edit-subtask-title"
                   value={editSubtaskForm.title}
                   onChange={(e) => setEditSubtaskForm(prev => ({ ...prev, title: e.target.value }))}
-                  placeholder="Nome da subtarefa"
+                  placeholder="Nome da tarefa"
                   className="text-base"
                 />
               </div>
@@ -1258,7 +1453,7 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
                   id="edit-subtask-description"
                   value={editSubtaskForm.description}
                   onChange={(e) => setEditSubtaskForm(prev => ({ ...prev, description: e.target.value }))}
-                  placeholder="Descrição opcional da subtarefa"
+                  placeholder="Descrição opcional da tarefa"
                   rows={3}
                   className="resize-none"
                 />
@@ -1405,7 +1600,7 @@ export function TaskManagement({ currentUser }: TaskManagementProps) {
                     </p>
                   </div>
                   {!editSubtaskForm.requiresApproval && (
-                    <Badge variant="secondary" className="text-xs bg-yellow-100 text-yellow-800">
+                    <Badge variant="secondary" className={`text-xs ${getPriorityClasses('MEDIUM')}`}>
                       ⚡ Auto
                     </Badge>
                   )}

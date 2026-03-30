@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { createTRPCRouter, publicProcedure } from '@/server/api/trpc'
+import { dispatchWebhooks } from '@/lib/webhook-dispatch'
 
 export const commentRouter = createTRPCRouter({
   // Criar comentário
@@ -13,7 +14,7 @@ export const commentRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       // Autor já leu automaticamente (marca como lido ao criar)
-      return ctx.prisma.comment.create({
+      const comment = await ctx.prisma.comment.create({
         data: {
           content: input.content,
           subtaskId: input.subtaskId,
@@ -22,12 +23,28 @@ export const commentRouter = createTRPCRouter({
         },
         include: {
           author: true,
-          subtask: true,
+          subtask: {
+            include: {
+              mainTask: true,
+            },
+          },
         },
       })
+
+      void dispatchWebhooks(comment.subtask.mainTask.accountId, 'comment.added', {
+        commentId: comment.id,
+        subtaskId: comment.subtaskId,
+        mainTaskId: comment.subtask.mainTaskId,
+        authorId: comment.authorId,
+        authorName: comment.author.name,
+        content: comment.content,
+        createdAt: comment.createdAt.toISOString(),
+      })
+
+      return comment
     }),
 
-  // Listar comentários por subtarefa
+  // Listar comentรกrios por subtarefa
   getBySubtask: publicProcedure
     .input(z.object({ subtaskId: z.string() }))
     .query(({ ctx, input }) => {
@@ -41,7 +58,7 @@ export const commentRouter = createTRPCRouter({
       })
     }),
 
-  // Atualizar comentário
+  // Atualizar comentรกrio
   update: publicProcedure
     .input(
       z.object({
@@ -60,7 +77,7 @@ export const commentRouter = createTRPCRouter({
       })
     }),
 
-  // Deletar comentário
+  // Deletar comentรกrio
   delete: publicProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
@@ -69,7 +86,7 @@ export const commentRouter = createTRPCRouter({
       })
     }),
 
-  // Marcar comentários como lidos
+  // Marcar comentรกrios como lidos
   markAsRead: publicProcedure
     .input(
       z.object({
@@ -78,12 +95,12 @@ export const commentRouter = createTRPCRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      // Buscar todos os comentários não lidos desta subtask
+      // Buscar todos os comentรกrios nรฃo lidos desta subtask
       const comments = await ctx.prisma.comment.findMany({
         where: { subtaskId: input.subtaskId },
       })
 
-      // Atualizar cada comentário para incluir o userId no readBy
+      // Atualizar cada comentรกrio para incluir o userId no readBy
       const updatePromises = comments.map(comment => {
         let readByArray: string[] = []
         
@@ -93,7 +110,7 @@ export const commentRouter = createTRPCRouter({
           readByArray = []
         }
 
-        // Se o usuário já leu, não precisa atualizar
+        // Se o usuรกrio jรก leu, nรฃo precisa atualizar
         if (readByArray.includes(input.userId)) {
           return Promise.resolve()
         }

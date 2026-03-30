@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { createTRPCRouter, accountProcedure } from '@/server/api/trpc'
 import { MainTaskStatus, Priority } from '@prisma/client'
+import { dispatchWebhooks } from '@/lib/webhook-dispatch'
 
 export const mainTaskRouter = createTRPCRouter({
   // Criar tarefa principal
@@ -11,20 +12,24 @@ export const mainTaskRouter = createTRPCRouter({
         description: z.string().optional(),
         priority: z.nativeEnum(Priority).optional(),
         deadline: z.date().optional(),
+        departmentIds: z.array(z.string()).optional(),
+        clientId: z.string().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      return ctx.prisma.mainTask.create({
+      const mainTask = await ctx.prisma.mainTask.create({
         data: {
           title: input.title,
           description: input.description,
           priority: input.priority ?? Priority.MEDIUM,
           deadline: input.deadline,
           createdBy: ctx.userId!,
-          accountId: ctx.accountId, // Multi-tenancy
+          accountId: ctx.accountId,
+          clientId: input.clientId,
         },
         include: {
           creator: true,
+          client: true,
           subtasks: {
             include: {
               assignedTo: true,
@@ -32,6 +37,30 @@ export const mainTaskRouter = createTRPCRouter({
           },
         },
       })
+
+      // Atribuir a setores se fornecido
+      if (input.departmentIds && input.departmentIds.length > 0) {
+        await Promise.all(
+          input.departmentIds.map((departmentId) =>
+            ctx.prisma.departmentTask.create({
+              data: {
+                departmentId,
+                mainTaskId: mainTask.id,
+              },
+            })
+          )
+        )
+      }
+
+      void dispatchWebhooks(mainTask.accountId, 'project.created', {
+        projectId: mainTask.id,
+        title: mainTask.title,
+        status: mainTask.status,
+        clientId: mainTask.clientId,
+        createdAt: mainTask.createdAt.toISOString(),
+      })
+
+      return mainTask
     }),
 
   // Listar todas as tarefas principais da conta
@@ -40,17 +69,27 @@ export const mainTaskRouter = createTRPCRouter({
       z.object({
         status: z.nativeEnum(MainTaskStatus).optional(),
         createdBy: z.string().optional(),
+        clientId: z.string().optional(),
       }).optional()
     )
     .query(({ ctx, input }) => {
       return ctx.prisma.mainTask.findMany({
         where: {
-          accountId: ctx.accountId, // Filtrar por conta
+          accountId: ctx.accountId,
           ...(input?.status && { status: input.status }),
           ...(input?.createdBy && { createdBy: input.createdBy }),
+          ...(input?.clientId === 'none' && { clientId: null }),
+          ...(input?.clientId && input.clientId !== 'none' && { clientId: input.clientId }),
         },
         include: {
           creator: true,
+          client: true,
+          subtaskTemplate: true,
+          departmentTasks: {
+            include: {
+              department: true,
+            },
+          },
           subtasks: {
             include: {
               assignedTo: true,
@@ -87,6 +126,12 @@ export const mainTaskRouter = createTRPCRouter({
         },
         include: {
           creator: true,
+          client: true,
+          departmentTasks: {
+            include: {
+              department: true,
+            },
+          },
           subtasks: {
             include: {
               assignedTo: true,
@@ -127,10 +172,12 @@ export const mainTaskRouter = createTRPCRouter({
         status: z.nativeEnum(MainTaskStatus).optional(),
         priority: z.nativeEnum(Priority).optional(),
         deadline: z.date().optional(),
+        departmentIds: z.array(z.string()).optional(),
+        clientId: z.string().nullable().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const { id, ...data } = input
+      const { id, departmentIds, ...data } = input
       
       // Verificar se a tarefa pertence à conta do usuário
       const existingTask = await ctx.prisma.mainTask.findFirst({
@@ -153,17 +200,45 @@ export const mainTaskRouter = createTRPCRouter({
         )
         
         if (hasIncompleteSubtasks) {
-          throw new Error('Não é possível concluir a tarefa principal. Algumas subtarefas ainda não foram concluídas.')
+          throw new Error('Não é possível concluir o projeto. Algumas tarefas ainda não foram concluídas.')
         }
         
         data.completedAt = new Date()
       }
       
-      return ctx.prisma.mainTask.update({
+      // Atualizar setores se fornecido
+      if (departmentIds !== undefined) {
+        // Remover todos os setores atuais
+        await ctx.prisma.departmentTask.deleteMany({
+          where: { mainTaskId: id },
+        })
+        
+        // Adicionar novos setores
+        if (departmentIds.length > 0) {
+          await Promise.all(
+            departmentIds.map((departmentId) =>
+              ctx.prisma.departmentTask.create({
+                data: {
+                  departmentId,
+                  mainTaskId: id,
+                },
+              })
+            )
+          )
+        }
+      }
+      
+      const updated = await ctx.prisma.mainTask.update({
         where: { id },
         data,
         include: {
           creator: true,
+          client: true,
+          departmentTasks: {
+            include: {
+              department: true,
+            },
+          },
           subtasks: {
             include: {
               assignedTo: true,
@@ -171,6 +246,16 @@ export const mainTaskRouter = createTRPCRouter({
           },
         },
       })
+
+      void dispatchWebhooks(ctx.accountId!, 'project.updated', {
+        projectId: updated.id,
+        title: updated.title,
+        status: updated.status,
+        clientId: updated.clientId,
+        updatedAt: updated.updatedAt.toISOString(),
+      })
+
+      return updated
     }),
 
   // Deletar tarefa principal
@@ -186,9 +271,16 @@ export const mainTaskRouter = createTRPCRouter({
         throw new Error('Tarefa não encontrada ou você não tem permissão')
       }
       
-      return ctx.prisma.mainTask.delete({
+      await ctx.prisma.mainTask.delete({
         where: { id: input.id },
       })
+
+      void dispatchWebhooks(ctx.accountId!, 'project.deleted', {
+        projectId: task.id,
+        title: task.title,
+      })
+
+      return task
     }),
 
   // Obter estatísticas de progresso

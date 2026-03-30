@@ -114,7 +114,15 @@ export const userManagementRouter = createTRPCRouter({
           accountId: ctx.session.user.activeAccountId,
         },
         include: {
-          user: true,
+          user: {
+            include: {
+              departmentUsers: {
+                include: {
+                  department: true,
+                },
+              },
+            },
+          },
         },
         orderBy: {
           createdAt: 'desc',
@@ -129,6 +137,12 @@ export const userManagementRouter = createTRPCRouter({
         emailVerified: au.user.emailVerified,
         createdAt: au.createdAt,
         updatedAt: au.updatedAt,
+        departments: au.user.departmentUsers
+          .filter(du => du.department.accountId === ctx.session.user.activeAccountId)
+          .map(du => ({
+            id: du.department.id,
+            name: du.department.name,
+          })),
       }))
     }),
 

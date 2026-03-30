@@ -5,475 +5,67 @@ import { SubtaskStatus, Priority } from '@prisma/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Progress } from '@/components/ui/progress'
+import { WorkflowProgressBar, WorkflowProgressBarAggregate, TaskSequenceProgressBar } from '@/components/workflow-progress-bar'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Calendar, Clock, MessageSquare, AlertTriangle, CheckCircle, GripVertical, MoreHorizontal, GitBranch, CheckCircle2, Eye } from 'lucide-react'
+import { Calendar, Clock, MessageSquare, CheckCircle, GitBranch, Eye, LayoutGrid, Lock, Filter, RotateCcw } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useNotificationSound } from '@/hooks/use-notification-sound'
-import {
-  DndContext,
-  DragEndEvent,
-  DragOverlay,
-  DragStartEvent,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  closestCenter,
-} from '@dnd-kit/core'
-import {
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-  arrayMove,
-} from '@dnd-kit/sortable'
-import {
-  useDroppable,
-} from '@dnd-kit/core'
-import {
-  CSS,
-} from '@dnd-kit/utilities'
 import toast from 'react-hot-toast'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Input } from '@/components/ui/input'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Label } from '@/components/ui/label'
 import { SubtaskDetailsModal } from '@/components/subtask-details-modal'
 import { SubtaskCompletionModal } from '@/components/subtask-completion-modal'
+import { cn } from '@/lib/utils'
+import { getPriorityClasses, getStatusClasses, getPriorityLabel } from '@/lib/theme-utils'
+import { sortSubtasksByDependency } from '@/lib/task-utils'
+import { ClientBadge } from './client/client-badge'
+import { SmartActionButtons } from './smart-action-buttons'
 
 interface KanbanBoardProps {
   userId: string
   userRole?: string
+  /** Quando definido, mostra apenas esta visão (sem abas internas) - usado pelo dashboard */
+  view?: 'tasks' | 'projects'
 }
 
-// Componente para a coluna droppable
-function DroppableColumn({ 
-  status, 
-  title, 
-  color, 
-  children, 
-  count 
-}: {
-  status: SubtaskStatus
-  title: string
-  color: string
-  children: React.ReactNode
-  count: number
-}) {
-  const { setNodeRef, isOver } = useDroppable({
-    id: status,
-  })
-
-  return (
-    <div className="flex flex-col h-full">
-      <Card 
-        className={`${color} border-2 flex-1 h-full transition-all duration-200 ease-in-out ${
-          isOver 
-            ? 'ring-2 ring-blue-500 ring-opacity-70 bg-blue-50/30 scale-[1.02] shadow-lg' 
-            : ''
-        }`}
-      >
-        <div className="px-7 py-1">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm">{title}</CardTitle>
-            <Badge variant="secondary" className="text-xs">
-              {count}
-            </Badge>
-          </div>
-        </div>
-        <CardContent 
-          className={`flex-1 min-h-32 pt-0 px-3 pb-2 transition-all duration-200 ${
-            isOver ? 'bg-blue-50/20' : ''
-          }`}
-          ref={setNodeRef}
-        >
-          <div className="h-full w-full">
-            {children}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  )
+// Funções auxiliares para formatação (extraídas do SubtaskCardContent)
+function formatDate(date: Date | null) {
+  if (!date) return null
+  return new Date(date).toLocaleDateString('pt-BR')
 }
 
-// Componente para o card arrastável
-function DraggableSubtaskCard({ subtask, onStatusChange, onOpenDetails, onComplete }: {
-  subtask: any,
-  onStatusChange: (subtaskId: string, newStatus: SubtaskStatus) => void,
-  onOpenDetails: (subtask: any, tab?: 'details' | 'comments' | 'checklist') => void,
-  onComplete?: (subtask: any) => void
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: subtask.id })
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition: isDragging ? 'none' : transition || 'transform 200ms cubic-bezier(0.4, 0, 0.2, 1)',
-    opacity: isDragging ? 0.3 : 1,
-    willChange: isDragging ? 'transform' : 'auto',
-  }
-
-  return (
-    <>
-      <Card
-        ref={setNodeRef}
-        style={style}
-        className={`bg-white shadow-sm transition-all duration-200 ease-in-out cursor-grab active:cursor-grabbing ${
-          isDragging 
-            ? 'scale-95 opacity-30 shadow-none' 
-            : 'hover:shadow-md hover:scale-[1.02]'
-        }`}
-        {...attributes}
-        {...listeners}
-      >
-        <CardContent 
-          className="p-4"
-          style={{ pointerEvents: isDragging ? 'none' : 'auto' }}
-        >
-          <SubtaskCardContent 
-            subtask={subtask} 
-            onStatusChange={onStatusChange}
-            onOpenDetails={onOpenDetails}
-            onComplete={onComplete}
-            isDragging={isDragging}
-          />
-        </CardContent>
-      </Card>
-      {isDragging && (
-        <div 
-          className="border-2 border-dashed border-blue-300 bg-blue-50/30 rounded-lg h-32 flex items-center justify-center"
-          style={{ marginBottom: '0.75rem' }}
-        >
-          <p className="text-xs text-blue-600 font-medium">Soltar aqui</p>
-        </div>
-      )}
-    </>
-  )
+function isOverdue(deadline: Date | null) {
+  if (!deadline) return false
+  return new Date(deadline) < new Date()
 }
 
-// Componente para o conteúdo do card (reutilizável)
-function SubtaskCardContent({ subtask, onStatusChange, onOpenDetails, onComplete, isDragging }: {
-  subtask: any,
-  onStatusChange: (subtaskId: string, newStatus: SubtaskStatus) => void,
-  onOpenDetails: (subtask: any, tab?: 'details' | 'comments' | 'checklist') => void,
-  onComplete?: (subtask: any) => void,
-  isDragging?: boolean
-}) {
-  const getPriorityColor = (priority: Priority) => {
-    switch (priority) {
-      case Priority.URGENT:
-        return 'bg-red-100 text-red-800'
-      case Priority.HIGH:
-        return 'bg-orange-100 text-orange-800'
-      case Priority.MEDIUM:
-        return 'bg-yellow-100 text-yellow-800'
-      case Priority.LOW:
-        return 'bg-green-100 text-green-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
-    }
-  }
+// Status "abertas" = TODO, IN_PROGRESS, BLOCKED, COMPLETED_PENDING (exclui APPROVED, REJECTED)
+const OPEN_STATUSES: SubtaskStatus[] = [
+  SubtaskStatus.TODO,
+  SubtaskStatus.IN_PROGRESS,
+  SubtaskStatus.BLOCKED,
+  SubtaskStatus.COMPLETED_PENDING,
+]
 
-  const getPriorityLabel = (priority: Priority) => {
-    switch (priority) {
-      case Priority.URGENT:
-        return 'Urgente'
-      case Priority.HIGH:
-        return 'Alta'
-      case Priority.MEDIUM:
-        return 'Média'
-      case Priority.LOW:
-        return 'Baixa'
-      default:
-        return priority
-    }
-  }
+export function KanbanBoard({ userId, userRole, view }: KanbanBoardProps) {
+  const [activeTab, setActiveTab] = useState<'tasks' | 'projects'>(view ?? 'tasks')
 
-  const formatDate = (date: Date | null) => {
-    if (!date) return null
-    return new Date(date).toLocaleDateString('pt-BR')
-  }
-
-  const isOverdue = (deadline: Date | null) => {
-    if (!deadline) return false
-    return new Date(deadline) < new Date()
-  }
-
-  return (
-    <div className="space-y-3">
-      {/* Título e Prioridade */}
-      <div className="space-y-2">
-        <div className="flex items-start justify-between">
-          <h4 
-            className={`font-medium text-sm leading-tight flex-1 ${isDragging ? 'cursor-grabbing' : 'cursor-pointer hover:text-blue-600'}`}
-            onClick={(e) => {
-              if (isDragging) return
-              e.stopPropagation()
-              onOpenDetails(subtask)
-            }}
-            style={{ pointerEvents: isDragging ? 'none' : 'auto' }}
-          >
-            {subtask.title}
-          </h4>
-          <div className="flex items-center space-x-2" style={{ pointerEvents: isDragging ? 'none' : 'auto' }}>
-            {/* Botão de Conclusão - só aparece em IN_PROGRESS */}
-            {subtask.status === SubtaskStatus.IN_PROGRESS && onComplete && !isDragging && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onComplete(subtask)
-                      }}
-                      className="h-7 px-3 bg-green-500 hover:bg-green-600 text-white font-medium text-xs shadow-sm hover:shadow-md transition-all duration-200 group flex items-center gap-1.5 rounded-md"
-                      disabled={isDragging}
-                    >
-                      <CheckCircle2 className="h-3.5 w-3.5 group-hover:scale-110 transition-transform duration-200" />
-                      <span>Concluir</span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p className="text-xs font-medium">Concluir tarefa</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-            
-            {!isDragging && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onOpenDetails(subtask)
-                }}
-                className="h-6 w-6 p-0"
-              >
-                <MoreHorizontal className="h-3 w-3" />
-              </Button>
-            )}
-            <GripVertical className="h-4 w-4 text-gray-400" />
-          </div>
-        </div>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <Badge variant="outline" className={getPriorityColor(subtask.priority)}>
-              {getPriorityLabel(subtask.priority)}
-            </Badge>
-            {subtask.isRecurring && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-800 cursor-help">
-                      🔄 Recorrente
-                    </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <div className="text-xs">
-                      <p className="font-medium">Tarefa Recorrente</p>
-                      <p>Tipo: {
-                        subtask.recurringType === 'DAILY' ? 'Diária' :
-                        subtask.recurringType === 'WEEKLY' ? 'Semanal' :
-                        subtask.recurringType === 'BIWEEKLY' ? 'Quinzenal' :
-                        subtask.recurringType === 'MONTHLY' ? 'Mensal' :
-                        subtask.recurringType === 'CUSTOM' ? 'Personalizada' :
-                        subtask.recurringType?.toLowerCase()
-                      }</p>
-                      
-                      {/* Mostrar dias da semana para semanal/quinzenal */}
-                      {(subtask.recurringType === 'WEEKLY' || subtask.recurringType === 'BIWEEKLY') && subtask.recurringWeekDays && (
-                        <p>Dias: {JSON.parse(subtask.recurringWeekDays).map((day: string) => {
-                          const dayNames: Record<string, string> = {
-                            'SUNDAY': 'Dom', 'MONDAY': 'Seg', 'TUESDAY': 'Ter',
-                            'WEDNESDAY': 'Qua', 'THURSDAY': 'Qui', 'FRIDAY': 'Sex', 'SATURDAY': 'Sáb'
-                          }
-                          return dayNames[day] || day
-                        }).join(', ')}</p>
-                      )}
-                      
-                      {/* Mostrar dias do mês para mensal */}
-                      {subtask.recurringType === 'MONTHLY' && subtask.recurringMonthDays && (
-                        <p>Dias do mês: {JSON.parse(subtask.recurringMonthDays).join(', ')}</p>
-                      )}
-                      
-                      {/* Mostrar intervalo para personalizada/diária */}
-                      {(subtask.recurringType === 'CUSTOM' || subtask.recurringType === 'DAILY') && subtask.recurringInterval && subtask.recurringInterval > 1 && (
-                        <p>A cada {subtask.recurringInterval} dias</p>
-                      )}
-                      
-                      {/* Opções especiais */}
-                      {(subtask.skipWeekends || subtask.skipHolidays) && (
-                        <p className="text-orange-600">
-                          Pula: {[
-                            subtask.skipWeekends ? 'fins de semana' : null,
-                            subtask.skipHolidays ? 'feriados' : null
-                          ].filter(Boolean).join(' e ')}
-                        </p>
-                      )}
-                      
-                      {subtask.nextReopenAt && (
-                        <p>Próxima: {formatDate(subtask.nextReopenAt)}</p>
-                      )}
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-            {!subtask.requiresApproval && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Badge variant="secondary" className="text-xs bg-yellow-100 text-yellow-800 cursor-help">
-                      ⚡ Auto
-                    </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <div className="text-xs">
-                      <p className="font-medium">Aprovação Automática</p>
-                      <p>Esta tarefa será aprovada automaticamente quando concluída</p>
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-          </div>
-          {isOverdue(subtask.deadline) && (
-            <Badge variant="destructive" className="text-xs">
-              Atrasado
-            </Badge>
-          )}
-        </div>
-      </div>
-
-      {/* Tarefa Principal */}
-      <div className="text-xs text-muted-foreground">
-        📋 {subtask.mainTask.title}
-      </div>
-
-      {/* Deadline e Indicadores */}
-      <div className="flex items-center justify-between">
-        {subtask.deadline && (
-          <div className="flex items-center text-xs text-muted-foreground">
-            <Calendar className="h-3 w-3 mr-1" />
-            {formatDate(subtask.deadline)}
-          </div>
-        )}
-        
-        <div className="flex items-center gap-2">
-          {/* Comentários - Ícone SEMPRE visível, número só quando há não lidos */}
-          {(() => {
-            // Verificar se há comentários não lidos
-            const unreadComments = subtask.comments?.filter((comment: any) => {
-              try {
-                const readBy = comment.readBy ? JSON.parse(comment.readBy) : []
-                return !readBy.includes(subtask.assignedToId)
-              } catch {
-                return true // Se erro ao parsear, considerar como não lido
-              }
-            }) || []
-            
-            const hasUnread = unreadComments.length > 0
-            const totalComments = subtask.comments?.length || 0
-            
-            return (
-              <button
-                onClick={(e) => {
-                  if (isDragging) return
-                  e.stopPropagation()
-                  if (onOpenDetails.length > 1) {
-                    onOpenDetails(subtask, 'comments')
-                  } else {
-                    onOpenDetails(subtask)
-                  }
-                }}
-                className={`relative group ${isDragging ? 'cursor-grabbing' : 'cursor-pointer'}`}
-                title={!isDragging ? (hasUnread 
-                  ? `${unreadComments.length} comentário${unreadComments.length > 1 ? 's' : ''} não lido${unreadComments.length > 1 ? 's' : ''}`
-                  : totalComments > 0 
-                    ? `${totalComments} comentário${totalComments > 1 ? 's' : ''}`
-                    : 'Ver comentários'
-                ) : undefined}
-                disabled={isDragging}
-                style={{ pointerEvents: isDragging ? 'none' : 'auto' }}
-              >
-                {/* Círculo de fundo ao hover */}
-                <div className="absolute inset-0 -m-1.5 rounded-full bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
-                
-                {/* Ícone */}
-                <MessageSquare className="h-4 w-4 text-gray-500 relative z-10 group-hover:text-gray-700 group-hover:scale-110 transition-all duration-200" />
-                
-                {/* Badge vermelho - SÓ aparece se tiver não lidos */}
-                {hasUnread && (
-                  <div className="absolute -top-2 -right-2 min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white bg-red-500 z-20 animate-pulse shadow-lg">
-                    {unreadComments.length > 99 ? '99+' : unreadComments.length}
-                  </div>
-                )}
-              </button>
-            )
-          })()}
-          
-          {/* Checklist */}
-          {subtask.checklistItems && (() => {
-            try {
-              const items = JSON.parse(subtask.checklistItems)
-              if (items.length > 0) {
-                const checked = items.filter((item: any) => item.checked).length
-                return (
-                  <div className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded">
-                    <CheckCircle className="h-3 w-3" />
-                    <span>{checked}/{items.length}</span>
-                  </div>
-                )
-              }
-            } catch {
-              return null
-            }
-            return null
-          })()}
-        </div>
-      </div>
-
-      {/* Indicador de Dependências */}
-      {subtask.dependencies && subtask.dependencies.length > 0 && (() => {
-        const blockingDependencies = subtask.dependencies.filter((dep: any) => 
-          dep.blocking && 
-          dep.blocking.status !== 'APPROVED'
-        )
-        
-        return blockingDependencies.length > 0 ? (
-          <div className="flex items-center justify-end">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="flex items-center space-x-1 text-xs text-orange-600 cursor-help">
-                    <GitBranch className="h-3 w-3 text-orange-500" />
-                    <span className="text-orange-600 font-medium">
-                      {blockingDependencies.length}
-                    </span>
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p className="text-xs">
-                    {blockingDependencies.length} dependência{blockingDependencies.length > 1 ? 's' : ''} pendente{blockingDependencies.length > 1 ? 's' : ''}
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-        ) : null
-      })()}
-    </div>
-  )
-}
-
-export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
-  const [activeTab, setActiveTab] = useState<'tasks' | 'pending' | 'waiting' | 'approved'>('tasks')
-  const [activeSubtask, setActiveSubtask] = useState<any>(null)
+  // Quando view é passado (uso pelo dashboard), forçar a aba ativa
+  useEffect(() => {
+    if (view) setActiveTab(view)
+  }, [view])
+  // Filtros da aba Minhas Tarefas
+  const [tasksProjectFilter, setTasksProjectFilter] = useState<string>('all')
+  const [tasksClientFilter, setTasksClientFilter] = useState<string>('all')
+  const [tasksStatusFilter, setTasksStatusFilter] = useState<'open' | 'all' | 'approved' | 'rejected'>('open')
+  // Filtros da aba Visão do Projeto
+  const [projectsProjectFilter, setProjectsProjectFilter] = useState<string>('all')
+  const [projectsClientFilter, setProjectsClientFilter] = useState<string>('all')
+  const [projectsAttrFilter, setProjectsAttrFilter] = useState<{ attrId: string; value: string } | null>(null)
   const [selectedSubtask, setSelectedSubtask] = useState<any>(null)
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false)
   const [initialModalTab, setInitialModalTab] = useState<'details' | 'comments' | 'checklist'>('details')
@@ -492,12 +84,19 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
   // Ref para armazenar contagem anterior de comentários não lidos
   const previousUnreadCountRef = useRef<Record<string, number>>({})
   
+  const canSeeAllProjects = ['ADMIN', 'OWNER', 'MANAGER'].includes(userRole || '')
   const { data: subtasks, isLoading } = api.subtask.getByUser.useQuery({
     userRole: userRole as any,
   }, {
-    refetchInterval: 15000, // Reduzido para 15 segundos
-    refetchIntervalInBackground: false, // Só atualiza quando componente visível
+    refetchInterval: 15000,
+    refetchIntervalInBackground: false,
   })
+
+  const { data: allMainTasks } = api.mainTask.getAll.useQuery(undefined, {
+    enabled: canSeeAllProjects,
+  })
+
+  const { data: customAttributes } = api.clientCustomAttribute.getAll.useQuery()
 
   // Detectar novos comentários não lidos e tocar som
   useEffect(() => {
@@ -587,93 +186,151 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
     },
   })
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    })
-  )
+  const { data: buttonDefs } = api.taskField.getDefinitions.useQuery()
 
-  const getSubtasksByStatus = useMemo(() => {
-    return (status: SubtaskStatus) => {
-      return subtasks?.filter(subtask => subtask.status === status) || []
+  const executeSmartButton = api.taskField.executeSmartButton.useMutation({
+    onSuccess: (_, variables) => {
+      toast.success('Ação executada!')
+      // Limpar estado local para este subtask para que ele volte a ler do subtasks.status (agora atualizado)
+      setLocalStatuses(prev => {
+        const next = { ...prev }
+        delete next[variables.subtaskId]
+        return next
+      })
+      utils.subtask.invalidate()
+      utils.comment.invalidate()
+      utils.mainTask.invalidate()
+    },
+    onError: (err, variables) => {
+      toast.error('Erro ao executar: ' + err.message)
+      // Opcional: manter o valor local ou resetar. Resetar é mais seguro.
+      setLocalStatuses(prev => {
+        const next = { ...prev }
+        delete next[variables.subtaskId]
+        return next
+      })
     }
-  }, [subtasks])
+  })
 
-  const tabCounts = useMemo(() => {
-    if (!subtasks) return { tasks: 0, pending: 0, waiting: 0, approved: 0 }
-    
-    return {
-      tasks: subtasks.filter(s => s.status === SubtaskStatus.TODO || s.status === SubtaskStatus.IN_PROGRESS).length,
-      pending: subtasks.filter(s => s.status === SubtaskStatus.BLOCKED).length,
-      waiting: subtasks.filter(s => s.status === SubtaskStatus.COMPLETED_PENDING).length,
-      approved: subtasks.filter(s => s.status === SubtaskStatus.APPROVED).length
+  // Opções de filtro extraídas dos dados (inclui mainTasks quando admin/manager)
+  const filterOptions = useMemo(() => {
+    const projectMap = new Map<string, string>()
+    const clientMap = new Map<string, string>()
+    for (const s of subtasks || []) {
+      projectMap.set(s.mainTaskId, s.mainTask?.title || 'Projeto')
+      if (s.mainTask?.client) clientMap.set(s.mainTask.client.id, s.mainTask.client.name)
     }
-  }, [subtasks])
-
-  const getTabSubtasks = useMemo(() => {
-    if (!subtasks) return [] as any[]
-    
-    switch (activeTab) {
-      case 'tasks':
-        return subtasks.filter(s => s.status === SubtaskStatus.TODO || s.status === SubtaskStatus.IN_PROGRESS)
-      case 'pending':
-        return subtasks.filter(s => s.status === SubtaskStatus.BLOCKED)
-      case 'waiting':
-        return subtasks.filter(s => s.status === SubtaskStatus.COMPLETED_PENDING)
-      case 'approved':
-        return subtasks.filter(s => s.status === SubtaskStatus.APPROVED)
-      default:
-        return []
-    }
-  }, [subtasks, activeTab]) as any[]
-
-  const handleStatusChange = (subtaskId: string, newStatus: SubtaskStatus) => {
-    updateSubtask.mutate({
-      id: subtaskId,
-      status: newStatus,
-    })
-  }
-
-  const handleDragStart = (event: DragStartEvent) => {
-    const { active } = event
-    const subtask = subtasks?.find(s => s.id === active.id)
-    setActiveSubtask(subtask)
-  }
-
-  // Não precisamos mais do hook canStartSubtask, verificamos diretamente pelo objeto subtask
-  
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
-    setActiveSubtask(null)
-
-    if (!over) return
-
-    const subtaskId = active.id as string
-    const overId = over.id as string
-    
-    // Verificar se é uma subtarefa (para reordenação dentro da coluna)
-    const isOverSubtask = subtasks?.some(s => s.id === overId)
-    
-    // Se estiver arrastando sobre outra subtarefa na mesma coluna, fazer reordenação
-    if (isOverSubtask) {
-      const currentSubtask = subtasks?.find(s => s.id === subtaskId)
-      const overSubtask = subtasks?.find(s => s.id === overId)
-      
-      // Se estiver na mesma coluna (mesmo status), fazer reordenação
-      if (currentSubtask && overSubtask && currentSubtask.status === overSubtask.status) {
-        // Reordenação dentro da mesma coluna será tratada pelo optimistic update
-        // Por enquanto, apenas não fazer nada (o array já foi reordenado visualmente)
-        // Se no futuro quiser persistir a ordem, precisará adicionar campo "order" no schema
-        return
+    if (canSeeAllProjects && allMainTasks) {
+      for (const mt of allMainTasks) {
+        projectMap.set(mt.id, mt.title || 'Projeto')
+        if (mt.client) clientMap.set(mt.client.id, mt.client.name)
       }
     }
+    return {
+      projects: Array.from(projectMap.entries()).map(([id, title]) => ({ id, title })).sort((a, b) => a.title.localeCompare(b.title)),
+      clients: Array.from(clientMap.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)),
+    }
+  }, [subtasks, canSeeAllProjects, allMainTasks])
 
-    // Se não for sobre outra subtarefa, é sobre uma coluna (status)
-    const newStatus = over.id as SubtaskStatus
+  // Aplicar filtros da aba Minhas Tarefas (projeto, cliente, status)
+  const filteredSubtasks = useMemo(() => {
+    if (!subtasks) return []
+    return subtasks.filter((s) => {
+      if (tasksProjectFilter !== 'all' && s.mainTaskId !== tasksProjectFilter) return false
+      if (tasksClientFilter !== 'all') {
+        const clientId = s.mainTask?.client?.id
+        if (!clientId || clientId !== tasksClientFilter) return false
+      }
+      if (tasksStatusFilter === 'open' && !OPEN_STATUSES.includes(s.status)) return false
+      if (tasksStatusFilter === 'approved' && s.status !== SubtaskStatus.APPROVED) return false
+      if (tasksStatusFilter === 'rejected' && s.status !== SubtaskStatus.REJECTED) return false
+      return true
+    })
+  }, [subtasks, tasksProjectFilter, tasksClientFilter, tasksStatusFilter])
 
-    // Verificar se realmente mudou de status
+  const matchesCustomAttr = useMemo(() => {
+    return (client: { customValues?: string | null } | null) => {
+      if (!projectsAttrFilter?.attrId || !projectsAttrFilter?.value?.trim()) return true
+      if (!client?.customValues) return false
+      try {
+        const cv = JSON.parse(client.customValues) as Record<string, unknown>
+        const val = cv[projectsAttrFilter.attrId]
+        if (val == null) return false
+        const strVal = Array.isArray(val)
+          ? val.map((f: { fileName?: string }) => f?.fileName ?? '').join(' ').toLowerCase()
+          : String(val).toLowerCase()
+        return strVal.includes(projectsAttrFilter.value.trim().toLowerCase())
+      } catch {
+        return false
+      }
+    }
+  }, [projectsAttrFilter])
+
+  // Agrupar por projeto para a aba Visão do Projeto (usa filtros da aba projetos)
+  const projectsByMainTask = useMemo(() => {
+    if (canSeeAllProjects && allMainTasks?.length) {
+      return allMainTasks
+        .filter((mt) => {
+          if (projectsProjectFilter !== 'all' && mt.id !== projectsProjectFilter) return false
+          if (projectsClientFilter !== 'all') {
+            const cid = mt.client?.id
+            if (!cid || cid !== projectsClientFilter) return false
+          }
+          return matchesCustomAttr(mt.client)
+        })
+        .map((mt) => ({
+          mainTaskId: mt.id,
+          mainTask: mt,
+          subtasks: mt.subtasks || [],
+        }))
+    }
+    const grouped = new Map<string, any[]>()
+    for (const s of subtasks ?? []) {
+      const mt = s.mainTask
+      if (projectsProjectFilter !== 'all' && s.mainTaskId !== projectsProjectFilter) continue
+      if (projectsClientFilter !== 'all') {
+        const cid = mt?.client?.id
+        if (!cid || cid !== projectsClientFilter) continue
+      }
+      if (!matchesCustomAttr(mt?.client)) continue
+      const list = grouped.get(s.mainTaskId) || []
+      list.push(s)
+      grouped.set(s.mainTaskId, list)
+    }
+    return Array.from(grouped.entries()).map(([mainTaskId, subs]) => ({
+      mainTaskId,
+      mainTask: subs[0]?.mainTask,
+      subtasks: subs,
+    }))
+  }, [subtasks, canSeeAllProjects, allMainTasks, projectsProjectFilter, projectsClientFilter, matchesCustomAttr])
+
+  const tabCounts = useMemo(() => ({
+    tasks: filteredSubtasks.length,
+    projects: projectsByMainTask.length,
+  }), [filteredSubtasks.length, projectsByMainTask.length])
+
+  const [localStatuses, setLocalStatuses] = useState<Record<string, string>>({})
+
+  const getTabSubtasks = useMemo(() => {
+    if (activeTab !== 'tasks') return []
+    return sortSubtasksByDependency(filteredSubtasks)
+  }, [filteredSubtasks, activeTab]) as any[]
+
+  const handleStatusChange = (subtaskId: string, newValue: string) => {
+    // Atualizar estado local para feedback imediato na UI
+    setLocalStatuses(prev => ({ ...prev, [subtaskId]: newValue }))
+
+    // Se for um botão de ação (prefixo btn_)
+    if (newValue.startsWith('btn_')) {
+      const buttonId = newValue.substring(4)
+      // Feedback visual imediato: mantém o valor do botão selecionado
+      setLocalStatuses(prev => ({ ...prev, [subtaskId]: newValue }))
+      executeSmartButton.mutate({ buttonId, subtaskId })
+      return
+    }
+
+    const newStatus = newValue as SubtaskStatus
+    // Validações de mudança de status
     const currentSubtask = subtasks?.find(s => s.id === subtaskId)
     if (!currentSubtask) return
     
@@ -682,6 +339,15 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
     // Verificar se é um movimento válido
     const validStatuses = Object.values(SubtaskStatus)
     if (!validStatuses.includes(newStatus)) return
+
+    // Se estiver tentando iniciar (Em andamento) mas há dependências pendentes
+    const blockingDeps = currentSubtask.dependencies?.filter(
+      (dep: any) => dep.blocking && dep.blocking.status !== SubtaskStatus.APPROVED
+    ) || []
+    if (newStatus === SubtaskStatus.IN_PROGRESS && blockingDeps.length > 0) {
+      toast.error('Aguarde a conclusão da tarefa anterior')
+      return
+    }
 
     // Se estiver tentando concluir a subtarefa (mover para "Aguardando Aprovação")
     if (newStatus === SubtaskStatus.COMPLETED_PENDING) {
@@ -694,14 +360,17 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
       return
     }
 
-    // Não permitir mover para outros status de conclusão via drag
+    // Não permitir mover para outros status de conclusão via dropdown na aba tasks
     if (newStatus === SubtaskStatus.APPROVED || newStatus === SubtaskStatus.BLOCKED) {
       toast.error('Esta ação deve ser feita pelo gestor ou automaticamente pelo sistema.')
       return
     }
 
     // Se passou por todas as verificações, pode mudar o status
-    handleStatusChange(subtaskId, newStatus)
+    updateSubtask.mutate({
+      id: subtaskId,
+      status: newStatus,
+    })
   }
 
   const handleOpenDetails = (subtask: any, tab: 'details' | 'comments' | 'checklist' = 'details') => {
@@ -742,10 +411,10 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
           <Card>
             <CardContent className="flex items-center py-0.5 px-6">
               <div className="flex items-center space-x-2 w-full">
-                <div className="w-8 h-8 bg-gray-200 rounded-full animate-pulse" />
+                <div className="w-8 h-8 bg-muted rounded-full animate-pulse" />
                 <div className="space-y-2 flex-1">
-                  <div className="h-6 bg-gray-200 rounded w-12 animate-pulse" />
-                  <div className="h-3 bg-gray-200 rounded w-16 animate-pulse" />
+                  <div className="h-6 bg-muted rounded w-12 animate-pulse" />
+                  <div className="h-3 bg-muted rounded w-16 animate-pulse" />
                 </div>
               </div>
             </CardContent>
@@ -754,42 +423,46 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
           <Card>
             <CardContent className="flex items-center py-0.5 px-6">
               <div className="flex items-center space-x-2 w-full">
-                <div className="w-8 h-8 bg-gray-200 rounded-full animate-pulse" />
+                <div className="w-8 h-8 bg-muted rounded-full animate-pulse" />
                 <div className="space-y-2 flex-1">
-                  <div className="h-6 bg-gray-200 rounded w-12 animate-pulse" />
-                  <div className="h-3 bg-gray-200 rounded w-20 animate-pulse" />
+                  <div className="h-6 bg-muted rounded w-12 animate-pulse" />
+                  <div className="h-3 bg-muted rounded w-20 animate-pulse" />
                 </div>
               </div>
             </CardContent>
           </Card>
         </div>
         
-        {/* Skeleton para quadro Kanban */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {[1, 2].map((i) => (
-            <Card key={i} className="border-2">
-              <div className="px-7 py-1">
-                <div className="flex items-center justify-between">
-                  <div className="h-4 bg-gray-200 rounded w-24 animate-pulse" />
-                  <div className="h-5 bg-gray-200 rounded-full w-8 animate-pulse" />
-                </div>
+        {/* Skeleton para tabela */}
+        <Card>
+          <CardHeader>
+            <div className="h-6 bg-muted rounded w-32 animate-pulse" />
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {/* Header da tabela */}
+              <div className="grid grid-cols-4 gap-4 pb-2 border-b">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="h-4 bg-muted rounded animate-pulse" />
+                ))}
               </div>
-              <CardContent className="pt-0 px-3 pb-2">
-                <div className="space-y-3 min-h-[200px]">
-                  {[1, 2].map((j) => (
-                    <div key={j} className="bg-gray-100 rounded-lg h-32 animate-pulse" />
+              {/* Linhas da tabela */}
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="grid grid-cols-4 gap-4 py-3">
+                  {[1, 2, 3, 4].map((j) => (
+                    <div key={j} className="h-4 bg-muted/50 rounded animate-pulse" />
                   ))}
                 </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     )
   }
 
   // Calcular total de mensagens não lidas em tarefas aguardando aprovação
-  const totalUnreadMessagesInWaiting = subtasks?.reduce((total, s) => {
+  const totalUnreadMessagesInWaiting = filteredSubtasks.reduce((total, s) => {
     if (s.status !== SubtaskStatus.COMPLETED_PENDING) return total
     
     const unreadCount = s.comments?.filter((comment: any) => {
@@ -805,270 +478,230 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
     return total + unreadCount
   }, 0) || 0
 
+  const showInternalTabs = !view
+
   return (
     <div className="space-y-6">
-      {/* Tabs com contadores */}
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as typeof activeTab)}>
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="tasks" className="flex items-center gap-2">
-            Minhas Tarefas
-            {tabCounts.tasks > 0 && (
-              <Badge variant="secondary" className="ml-1 bg-blue-100 text-blue-800">
-                {tabCounts.tasks}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="pending" className="flex items-center gap-2">
-            Pendentes
-            {tabCounts.pending > 0 && (
-              <Badge variant="destructive" className="ml-1">
-                {tabCounts.pending}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="waiting" className="flex items-center gap-2 relative">
-            Aguardando
-            <div className="flex items-center gap-1">
-              {tabCounts.waiting > 0 && (
-                <Badge variant="outline" className="bg-yellow-100 text-yellow-800">
-                  {tabCounts.waiting}
+      <Tabs value={activeTab} onValueChange={(value) => showInternalTabs && setActiveTab(value as typeof activeTab)}>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          {showInternalTabs && (
+          <TabsList className="grid w-full grid-cols-2 sm:w-auto">
+            <TabsTrigger value="tasks" className="flex items-center gap-2">
+              Minhas Tarefas
+              <div className="flex items-center gap-1">
+                {tabCounts.tasks > 0 && (
+                  <Badge variant="info" className="ml-1">
+                    {tabCounts.tasks}
+                  </Badge>
+                )}
+                {totalUnreadMessagesInWaiting > 0 && (
+                  <Badge variant="default" className="animate-pulse">
+                    💬 {totalUnreadMessagesInWaiting}
+                  </Badge>
+                )}
+              </div>
+            </TabsTrigger>
+            <TabsTrigger value="projects" className="flex items-center gap-2">
+              <LayoutGrid className="h-4 w-4" />
+              Visão do Projeto
+              {tabCounts.projects > 0 && (
+                <Badge variant="secondary" className="ml-1">
+                  {tabCounts.projects}
                 </Badge>
               )}
-              {totalUnreadMessagesInWaiting > 0 && (
-                <Badge variant="default" className="bg-purple-600 text-white animate-pulse">
-                  💬 {totalUnreadMessagesInWaiting}
-                </Badge>
-              )}
-            </div>
-          </TabsTrigger>
-          <TabsTrigger value="approved" className="flex items-center gap-2">
-            Aprovadas
-            {tabCounts.approved > 0 && (
-              <Badge variant="outline" className="ml-1 bg-green-100 text-green-800">
-                {tabCounts.approved}
-              </Badge>
-            )}
-          </TabsTrigger>
-        </TabsList>
-
-        {/* Aba Minhas Tarefas - Kanban */}
-        <TabsContent value="tasks" className="space-y-6">
-          {/* Resumo das Tarefas */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Card>
-              <CardContent className="flex items-center py-0.5 px-6">
-                <div className="flex items-center space-x-2">
-                  <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
-                    <Clock className="h-4 w-4 text-gray-600" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold">{getSubtasksByStatus(SubtaskStatus.TODO).length}</p>
-                    <p className="text-xs text-muted-foreground">A Fazer</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardContent className="flex items-center py-0.5 px-6">
-                <div className="flex items-center space-x-2">
-                  <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                    <Calendar className="h-4 w-4 text-blue-600" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold">{getSubtasksByStatus(SubtaskStatus.IN_PROGRESS).length}</p>
-                    <p className="text-xs text-muted-foreground">Em Andamento</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Quadro Kanban com Drag & Drop */}
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragStart={handleDragStart}
-            onDragEnd={handleDragEnd}
-          >
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {[
-                { status: SubtaskStatus.TODO, title: 'A Fazer', color: 'border-gray-200' },
-                { status: SubtaskStatus.IN_PROGRESS, title: 'Em Andamento', color: 'border-blue-200' }
-              ].map((column) => {
-                const columnSubtasks = getSubtasksByStatus(column.status)
-                
-                return (
-                  <DroppableColumn
-                    key={column.status}
-                    status={column.status}
-                    title={column.title}
-                    color={column.color}
-                    count={columnSubtasks.length}
-                  >
-                    <SortableContext 
-                      items={columnSubtasks.map(s => s.id)}
-                      strategy={verticalListSortingStrategy}
+            </TabsTrigger>
+          </TabsList>
+          )}
+          {/* Filtros na mesma linha das abas */}
+          <div className="flex items-center justify-end gap-1.5 shrink-0">
+            {activeTab === 'tasks' ? (
+              <>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={cn(
+                        'h-7 gap-1.5 px-2.5 text-muted-foreground hover:text-foreground',
+                        (tasksProjectFilter !== 'all' || tasksClientFilter !== 'all' || tasksStatusFilter !== 'open') &&
+                          'text-foreground'
+                      )}
                     >
-                      <div className="space-y-3 min-h-[200px]">
-                        {columnSubtasks.map((subtask) => (
-                          <DraggableSubtaskCard
-                            key={subtask.id}
-                            subtask={subtask}
-                            onStatusChange={handleStatusChange}
-                            onOpenDetails={handleOpenDetails}
-                            onComplete={handleCompleteTask}
-                          />
-                        ))}
-                      
-                        {columnSubtasks.length === 0 && (
-                          <div 
-                            className="text-center py-8 text-muted-foreground border-2 border-dashed border-gray-200 rounded-lg"
-                            style={{ minHeight: '100px' }}
+                      <Filter className="h-3.5 w-3.5" />
+                      <span className="text-xs">Filtros</span>
+                      {(tasksProjectFilter !== 'all' || tasksClientFilter !== 'all' || tasksStatusFilter !== 'open') && (
+                        <span className="size-1.5 rounded-full bg-primary/60" />
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-64 p-3" align="end">
+                    <div className="space-y-2.5">
+                      <Label className="text-xs text-muted-foreground">Projeto</Label>
+                      <Select value={tasksProjectFilter} onValueChange={setTasksProjectFilter}>
+                        <SelectTrigger className="h-8 border-0 bg-muted/40 text-xs">
+                          <SelectValue placeholder="Todos" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todos</SelectItem>
+                          {filterOptions.projects.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>{p.title}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Label className="text-xs text-muted-foreground">Contato</Label>
+                      <Select value={tasksClientFilter} onValueChange={setTasksClientFilter}>
+                        <SelectTrigger className="h-8 border-0 bg-muted/40 text-xs">
+                          <SelectValue placeholder="Todos" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todos</SelectItem>
+                          {filterOptions.clients.map((c) => (
+                            <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Label className="text-xs text-muted-foreground">Status</Label>
+                      <Select value={tasksStatusFilter} onValueChange={(v) => setTasksStatusFilter(v as typeof tasksStatusFilter)}>
+                        <SelectTrigger className="h-8 border-0 bg-muted/40 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="open">Abertas</SelectItem>
+                          <SelectItem value="all">Todas</SelectItem>
+                          <SelectItem value="approved">Aprovadas</SelectItem>
+                          <SelectItem value="rejected">Rejeitadas</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                {(tasksProjectFilter !== 'all' || tasksClientFilter !== 'all' || tasksStatusFilter !== 'open') && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground"
+                    onClick={() => {
+                      setTasksProjectFilter('all')
+                      setTasksClientFilter('all')
+                      setTasksStatusFilter('open')
+                    }}
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                    Limpar
+                  </Button>
+                )}
+              </>
+            ) : (
+              <>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={cn(
+                        'h-7 gap-1.5 px-2.5 text-muted-foreground hover:text-foreground',
+                        (projectsProjectFilter !== 'all' || projectsClientFilter !== 'all' || projectsAttrFilter?.attrId) &&
+                          'text-foreground'
+                      )}
+                    >
+                      <Filter className="h-3.5 w-3.5" />
+                      <span className="text-xs">Filtros</span>
+                      {(projectsProjectFilter !== 'all' || projectsClientFilter !== 'all' || projectsAttrFilter?.attrId) && (
+                        <span className="size-1.5 rounded-full bg-primary/60" />
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-64 p-3" align="end">
+                    <div className="space-y-2.5">
+                      <Label className="text-xs text-muted-foreground">Projeto</Label>
+                      <Select value={projectsProjectFilter} onValueChange={setProjectsProjectFilter}>
+                        <SelectTrigger className="h-8 border-0 bg-muted/40 text-xs">
+                          <SelectValue placeholder="Todos" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todos</SelectItem>
+                          {filterOptions.projects.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>{p.title}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Label className="text-xs text-muted-foreground">Cliente</Label>
+                      <Select value={projectsClientFilter} onValueChange={setProjectsClientFilter}>
+                        <SelectTrigger className="h-8 border-0 bg-muted/40 text-xs">
+                          <SelectValue placeholder="Todos" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todos</SelectItem>
+                          {filterOptions.clients.map((c) => (
+                            <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {customAttributes && customAttributes.length > 0 && (
+                        <>
+                          <Label className="text-xs text-muted-foreground">Atributo</Label>
+                          <Select
+                            value={projectsAttrFilter?.attrId ?? 'all'}
+                            onValueChange={(v) =>
+                              setProjectsAttrFilter(v === 'all' ? null : { attrId: v, value: projectsAttrFilter?.value ?? '' })
+                            }
                           >
-                            <p className="text-sm">Arraste uma tarefa aqui</p>
-                          </div>
-                        )}
-                      </div>
-                    </SortableContext>
-                  </DroppableColumn>
-                )
-              })}
-            </div>
-
-            {/* Overlay do item sendo arrastado */}
-            <DragOverlay
-              style={{
-                opacity: 0.95,
-              }}
-              dropAnimation={{
-                duration: 200,
-                easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
-              }}
-            >
-              {activeSubtask ? (
-                <Card className="bg-white shadow-2xl scale-110 border-2 border-blue-400 rotate-2">
-                  <CardContent className="p-4 pointer-events-none">
-                    <SubtaskCardContent 
-                      subtask={activeSubtask} 
-                      onStatusChange={handleStatusChange}
-                      onOpenDetails={handleOpenDetails}
-                      onComplete={handleCompleteTask}
-                      isDragging={true}
-                    />
-                  </CardContent>
-                </Card>
-              ) : null}
-            </DragOverlay>
-          </DndContext>
-        </TabsContent>
-
-        {/* Aba Pendentes - Tabela */}
-        <TabsContent value="pending">
-          <Card>
-            <CardHeader>
-              <CardTitle>Tarefas Pendentes</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Tarefa</TableHead>
-                    <TableHead>Projeto</TableHead>
-                    <TableHead>Prioridade</TableHead>
-                    <TableHead>Dependências</TableHead>
-                    <TableHead>Ações</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {getTabSubtasks.map((subtask) => (
-                    <TableRow key={subtask.id}>
-                      <TableCell>
-                        <div>
-                          <p className="font-medium">{subtask.title}</p>
-                          {subtask.description && (
-                            <p className="text-sm text-muted-foreground">{subtask.description}</p>
+                            <SelectTrigger className="h-8 border-0 bg-muted/40 text-xs">
+                              <SelectValue placeholder="Nenhum" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">Nenhum</SelectItem>
+                              {customAttributes.map((attr) => (
+                                <SelectItem key={attr.id} value={attr.id}>{attr.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {projectsAttrFilter?.attrId && (
+                            <>
+                              <Label className="text-xs text-muted-foreground">Valor</Label>
+                              <Input
+                                placeholder="Buscar..."
+                                className="h-8 border-0 bg-muted/40 text-xs"
+                                value={projectsAttrFilter.value}
+                                onChange={(e) =>
+                                  setProjectsAttrFilter((prev) =>
+                                    prev ? { ...prev, value: e.target.value } : null
+                                  )
+                                }
+                              />
+                            </>
                           )}
-                        </div>
-                      </TableCell>
-                      <TableCell>{subtask.mainTask.title}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={
-                          subtask.priority === Priority.URGENT ? 'bg-red-100 text-red-800' :
-                          subtask.priority === Priority.HIGH ? 'bg-orange-100 text-orange-800' :
-                          subtask.priority === Priority.MEDIUM ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-green-100 text-green-800'
-                        }>
-                          {subtask.priority === Priority.URGENT ? 'Urgente' :
-                           subtask.priority === Priority.HIGH ? 'Alta' :
-                           subtask.priority === Priority.MEDIUM ? 'Média' : 'Baixa'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {subtask.dependencies?.length > 0 ? (
-                          <div className="space-y-1">
-                            <div className="text-sm text-orange-600 font-medium">
-                              {subtask.dependencies.length} dependência(s)
-                            </div>
-                            <div className="space-y-1">
-                              {subtask.dependencies
-                                .filter((dep: any) => dep.blocking && dep.blocking.status !== 'APPROVED')
-                                .slice(0, 2)
-                                .map((dep: any) => (
-                                  <div key={dep.id} className="text-xs text-muted-foreground">
-                                    • {dep.blocking.title}
-                                  </div>
-                                ))}
-                              {subtask.dependencies.filter((dep: any) => dep.blocking && dep.blocking.status !== 'APPROVED').length > 2 && (
-                                <div className="text-xs text-muted-foreground">
-                                  +{subtask.dependencies.filter((dep: any) => dep.blocking && dep.blocking.status !== 'APPROVED').length - 2} mais...
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">Nenhuma</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleOpenDetails(subtask)}
-                                className="h-8 w-8 p-0 hover:bg-muted"
-                              >
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p className="text-xs">Ver detalhes</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {getTabSubtasks.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                        Nenhuma tarefa pendente
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
+                        </>
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                {(projectsProjectFilter !== 'all' || projectsClientFilter !== 'all' || projectsAttrFilter?.attrId) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground"
+                    onClick={() => {
+                      setProjectsProjectFilter('all')
+                      setProjectsClientFilter('all')
+                      setProjectsAttrFilter(null)
+                    }}
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                    Limpar
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
+        </div>
 
-        {/* Aba Aguardando - Tabela */}
-        <TabsContent value="waiting">
+        {/* Aba Minhas Tarefas - Tabela */}
+        <TabsContent value="tasks" className="space-y-6">
+          {/* Tabela de Tarefas */}
           <Card>
             <CardHeader>
-              <CardTitle>Aguardando Aprovação</CardTitle>
+              <CardTitle>Minhas Tarefas</CardTitle>
             </CardHeader>
             <CardContent>
               <Table>
@@ -1076,7 +709,7 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
                   <TableRow>
                     <TableHead>Tarefa</TableHead>
                     <TableHead>Projeto</TableHead>
-                    <TableHead>Concluída em</TableHead>
+                    <TableHead className="w-[180px]">Progresso</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Ações</TableHead>
                   </TableRow>
@@ -1085,63 +718,272 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
                   {getTabSubtasks.map((subtask: any) => {
                     // Calcular comentários não lidos
                     const unreadComments = subtask.comments?.filter((comment: any) => {
-                      if (comment.authorId === userId) return false // Não contar próprios comentários
                       try {
                         const readBy = comment.readBy ? JSON.parse(comment.readBy) : []
-                        return !readBy.includes(userId)
+                        return !readBy.includes(subtask.assignedToId)
                       } catch {
                         return true
                       }
-                    }).length || 0
+                    }) || []
                     
-                    const hasUnreadComments = unreadComments > 0
+                    const hasUnread = unreadComments.length > 0
                     const totalComments = subtask.comments?.length || 0
 
+                    // Calcular checklist
+                    let checklistProgress = null
+                    if (subtask.checklistItems) {
+                      try {
+                        const items = JSON.parse(subtask.checklistItems)
+                        if (items.length > 0) {
+                          const checked = items.filter((item: any) => item.checked).length
+                          checklistProgress = { checked, total: items.length }
+                        }
+                      } catch {
+                        // Ignorar erro de parsing
+                      }
+                    }
+
+                    // Calcular dependências bloqueantes
+                    const blockingDependencies = subtask.dependencies?.filter((dep: any) => 
+                      dep.blocking && dep.blocking.status !== 'APPROVED'
+                    ) || []
+
                     return (
-                      <TableRow key={subtask.id} className={hasUnreadComments ? 'bg-purple-50/20' : ''}>
+                      <TableRow key={subtask.id}>
                         <TableCell>
-                          <div className="flex items-start gap-2">
-                            <div className="flex-1">
-                              <p className="font-medium">{subtask.title}</p>
-                              {subtask.description && (
-                                <p className="text-sm text-muted-foreground">{subtask.description}</p>
+                          <div className="space-y-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <h4 
+                                className="font-medium text-sm leading-tight flex-1 cursor-pointer hover:text-blue-600"
+                                onClick={() => handleOpenDetails(subtask)}
+                              >
+                                {subtask.title}
+                              </h4>
+                            </div>
+                            {subtask.description && (
+                              <p className="text-xs text-muted-foreground">{subtask.description}</p>
+                            )}
+                            <div className="flex items-center flex-wrap gap-2">
+                              <span
+                                className={cn(
+                                  'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium',
+                                  getPriorityClasses(subtask.priority)
+                                )}
+                              >
+                                <span className="size-1.5 shrink-0 rounded-full bg-current/80" />
+                                {getPriorityLabel(subtask.priority)}
+                              </span>
+                              <button
+                                onClick={() => handleOpenDetails(subtask, 'comments')}
+                                className="relative group cursor-pointer inline-flex items-center"
+                                title={hasUnread 
+                                  ? `${unreadComments.length} comentário${unreadComments.length > 1 ? 's' : ''} não lido${unreadComments.length > 1 ? 's' : ''}`
+                                  : totalComments > 0 
+                                    ? `${totalComments} comentário${totalComments > 1 ? 's' : ''}`
+                                    : 'Ver comentários'
+                                }
+                              >
+                                <div className="absolute inset-0 -m-1.5 rounded-full bg-muted opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+                                <MessageSquare className="h-4 w-4 text-muted-foreground relative z-10 group-hover:text-foreground group-hover:scale-110 transition-all duration-200" />
+                                {hasUnread && (
+                                  <div className="absolute -top-2 -right-2 min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-destructive-foreground bg-destructive z-20 animate-pulse shadow-lg">
+                                    {unreadComments.length > 99 ? '99+' : unreadComments.length}
+                                  </div>
+                                )}
+                              </button>
+                              {subtask.isRecurring && (
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Badge variant="info" className="text-xs cursor-help">
+                                        🔄 Recorrente
+                                      </Badge>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <div className="text-xs">
+                                        <p className="font-medium">Tarefa Recorrente</p>
+                                        <p>Tipo: {
+                                          subtask.recurringType === 'DAILY' ? 'Diária' :
+                                          subtask.recurringType === 'WEEKLY' ? 'Semanal' :
+                                          subtask.recurringType === 'BIWEEKLY' ? 'Quinzenal' :
+                                          subtask.recurringType === 'MONTHLY' ? 'Mensal' :
+                                          subtask.recurringType === 'CUSTOM' ? 'Personalizada' :
+                                          subtask.recurringType?.toLowerCase()
+                                        }</p>
+                                        {(subtask.recurringType === 'WEEKLY' || subtask.recurringType === 'BIWEEKLY') && subtask.recurringWeekDays && (
+                                          <p>Dias: {JSON.parse(subtask.recurringWeekDays).map((day: string) => {
+                                            const dayNames: Record<string, string> = {
+                                              'SUNDAY': 'Dom', 'MONDAY': 'Seg', 'TUESDAY': 'Ter',
+                                              'WEDNESDAY': 'Qua', 'THURSDAY': 'Qui', 'FRIDAY': 'Sex', 'SATURDAY': 'Sáb'
+                                            }
+                                            return dayNames[day] || day
+                                          }).join(', ')}</p>
+                                        )}
+                                        {subtask.recurringType === 'MONTHLY' && subtask.recurringMonthDays && (
+                                          <p>Dias do mês: {JSON.parse(subtask.recurringMonthDays).join(', ')}</p>
+                                        )}
+                                        {(subtask.recurringType === 'CUSTOM' || subtask.recurringType === 'DAILY') && subtask.recurringInterval && subtask.recurringInterval > 1 && (
+                                          <p>A cada {subtask.recurringInterval} dias</p>
+                                        )}
+                                        {(subtask.skipWeekends || subtask.skipHolidays) && (
+                                          <p className="text-orange-600">
+                                            Pula: {[
+                                              subtask.skipWeekends ? 'fins de semana' : null,
+                                              subtask.skipHolidays ? 'feriados' : null
+                                            ].filter(Boolean).join(' e ')}
+                                          </p>
+                                        )}
+                                        {subtask.nextReopenAt && (
+                                          <p>Próxima: {formatDate(subtask.nextReopenAt)}</p>
+                                        )}
+                                      </div>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
                               )}
-                              {totalComments > 0 && (
-                                <button
-                                  onClick={() => {
-                                    setSelectedSubtask(subtask)
-                                    setInitialModalTab('comments')
-                                    setIsDetailsModalOpen(true)
-                                  }}
-                                  className={`mt-1 flex items-center gap-1 text-xs transition-all hover:underline ${
-                                    hasUnreadComments 
-                                      ? 'text-purple-600 font-semibold hover:text-purple-700' 
-                                      : 'text-gray-500 hover:text-gray-700'
-                                  }`}
-                                >
-                                  <MessageSquare className={`h-3 w-3 ${hasUnreadComments ? 'fill-purple-600' : ''}`} />
-                                  <span>{totalComments} comentário{totalComments !== 1 ? 's' : ''}</span>
-                                  {hasUnreadComments && (
-                                    <Badge variant="default" className="ml-1 bg-purple-600 text-white text-[10px] px-1 py-0 h-4 animate-pulse">
-                                      {unreadComments} novo{unreadComments !== 1 ? 's' : ''}
-                                    </Badge>
-                                  )}
-                                </button>
+                              {!subtask.requiresApproval && (
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Badge variant="warning" className="text-xs cursor-help">
+                                        ⚡ Auto
+                                      </Badge>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <div className="text-xs">
+                                        <p className="font-medium">Aprovação Automática</p>
+                                        <p>Esta tarefa será aprovada automaticamente quando concluída</p>
+                                      </div>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
                               )}
+                              {isOverdue(subtask.deadline) && (
+                                <Badge variant="destructive" className="text-xs">
+                                  Atrasado
+                                </Badge>
+                              )}
+                              {subtask.deadline ? (
+                                <div className="flex items-center text-xs text-muted-foreground">
+                                  <Calendar className="h-3 w-3 mr-1" />
+                                  {formatDate(subtask.deadline)}
+                                </div>
+                              ) : null}
+                              {checklistProgress ? (
+                                <div className="flex items-center gap-1 text-xs text-success bg-success/10 px-2 py-0.5 rounded">
+                                  <CheckCircle className="h-3 w-3" />
+                                  <span>{checklistProgress.checked}/{checklistProgress.total}</span>
+                                </div>
+                              ) : null}
+                              {blockingDependencies.length > 0 ? (
+                                <span className="inline-flex text-muted-foreground/60">
+                                  <Lock className="h-3 w-3" />
+                                </span>
+                              ) : null}
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell>{subtask.mainTask.title}</TableCell>
                         <TableCell>
-                          {subtask.completedAt ? 
-                            new Date(subtask.completedAt).toLocaleString('pt-BR') : 
-                            'Não informado'
-                          }
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs text-muted-foreground">📋 {subtask.mainTask.title}</span>
+                            {subtask.mainTask.client && (
+                              <ClientBadge name={subtask.mainTask.client.name} />
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline" className="bg-yellow-100 text-yellow-800">
-                            Aguardando
-                          </Badge>
+                          <div className="min-w-[160px]">
+                            <WorkflowProgressBar
+                              status={subtask.status}
+                              variant="default"
+                              showLabels={true}
+                              activeCustomActionLabel={subtask.activeActionButton?.name ?? null}
+                            />
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {subtask.status === SubtaskStatus.BLOCKED ? (
+                            <Badge variant="destructive" className="gap-1">
+                              <GitBranch className="h-3 w-3" />
+                              Bloqueada
+                            </Badge>
+                          ) : subtask.status === SubtaskStatus.COMPLETED_PENDING ? (
+                            <Badge variant="warning">
+                              Aguardando
+                            </Badge>
+                          ) : subtask.status === SubtaskStatus.APPROVED ? (
+                            <Badge variant="success" className="gap-1">
+                              <CheckCircle className="h-3 w-3" />
+                              Aprovada
+                            </Badge>
+                          ) : blockingDependencies.length > 0 ? (
+                            <span className="inline-flex items-center justify-center w-8 h-8 rounded border border-border/50 text-muted-foreground/50">
+                              <Lock className="h-4 w-4" />
+                            </span>
+                          ) : (
+                                <Select
+                                  value={localStatuses[subtask.id] || ((subtask as any).activeActionButtonId ? `btn_${(subtask as any).activeActionButtonId}` : subtask.status)}
+                                  onValueChange={(value) => handleStatusChange(subtask.id, value)}
+                                >
+                                  <SelectTrigger className={cn(
+                                    "w-[150px] shadow-sm border-0 transition-all font-medium",
+                                    (localStatuses[subtask.id] || (subtask as any).activeActionButtonId)?.startsWith('btn_') 
+                                      ? "bg-primary text-primary-foreground font-bold" 
+                                      : getStatusClasses(subtask.status as any)
+                                  )}>
+                                    <SelectValue placeholder="Mudar status..." />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value={SubtaskStatus.TODO}>
+                                      <div className="flex items-center gap-2">
+                                        <div className="w-2 h-2 rounded-full bg-muted-foreground" />
+                                        <span>A fazer</span>
+                                      </div>
+                                    </SelectItem>
+                                    <SelectItem value={SubtaskStatus.IN_PROGRESS}>
+                                      <div className="flex items-center gap-2">
+                                        <div className="w-2 h-2 rounded-full bg-info" />
+                                        <span>Em andamento</span>
+                                      </div>
+                                    </SelectItem>
+                                    <SelectItem value={SubtaskStatus.COMPLETED_PENDING}>
+                                      <div className="flex items-center gap-2">
+                                        <div className="w-2 h-2 rounded-full bg-success" />
+                                        <span>Concluído</span>
+                                      </div>
+                                    </SelectItem>
+
+                                    {/* Botões de Ação Dinâmicos */}
+                                    {buttonDefs?.filter(def => {
+                                      const btn = def as any
+                                      if (!btn.projectIds || btn.projectIds === '[]' || btn.projectIds === '') return true
+                                      try {
+                                        const ids = JSON.parse(btn.projectIds) as string[]
+                                        return ids.includes(subtask.mainTaskId)
+                                      } catch {
+                                        return true
+                                      }
+                                    }).map(def => {
+                                      const btn = def as any
+                                      return (
+                                        <SelectItem key={btn.id} value={`btn_${btn.id}`}>
+                                          <div className="flex items-center gap-2">
+                                            <div className={cn("w-2 h-2 rounded-full", 
+                                              btn.color === 'amber' ? 'bg-amber-500' :
+                                              btn.color === 'sky' ? 'bg-sky-500' :
+                                              btn.color === 'rose' ? 'bg-rose-500' :
+                                              btn.color === 'teal' ? 'bg-teal-500' :
+                                              btn.color === 'indigo' ? 'bg-indigo-500' :
+                                              btn.color === 'coral' ? 'bg-orange-500' : 'bg-primary'
+                                            )} />
+                                            <span className="font-bold">{btn.name}</span>
+                                          </div>
+                                        </SelectItem>
+                                      )
+                                    })}
+                                  </SelectContent>
+                                </Select>
+                          )}
                         </TableCell>
                         <TableCell>
                           <TooltipProvider>
@@ -1168,7 +1010,7 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
                   {getTabSubtasks.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                        Nenhuma tarefa aguardando aprovação
+                        Nenhuma tarefa encontrada
                       </TableCell>
                     </TableRow>
                   )}
@@ -1178,81 +1020,61 @@ export function KanbanBoard({ userId, userRole }: KanbanBoardProps) {
           </Card>
         </TabsContent>
 
-        {/* Aba Aprovadas - Tabela */}
-        <TabsContent value="approved">
+        {/* Aba Visão do Projeto - Barra horizontal de progresso */}
+        <TabsContent value="projects" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Tarefas Aprovadas</CardTitle>
+              <CardTitle>Andamento dos Projetos</CardTitle>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Tarefa</TableHead>
-                    <TableHead>Projeto</TableHead>
-                    <TableHead>Aprovada em</TableHead>
-                    <TableHead>Tempo Total</TableHead>
-                    <TableHead>Ações</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {getTabSubtasks.map((subtask) => (
-                    <TableRow key={subtask.id}>
-                      <TableCell>
+              <div className="space-y-4">
+                {projectsByMainTask.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    Nenhum projeto
+                  </div>
+                ) : (
+                  projectsByMainTask.map(({ mainTaskId, mainTask, subtasks: projectSubtasks }) => (
+                    <div
+                      key={mainTaskId}
+                      className="rounded-lg border p-4 hover:bg-muted/30 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-2">
                         <div>
-                          <p className="font-medium">{subtask.title}</p>
-                          {subtask.description && (
-                            <p className="text-sm text-muted-foreground">{subtask.description}</p>
+                          <h3 className="font-semibold">{mainTask?.title || 'Projeto'}</h3>
+                          {mainTask?.client && (
+                            <ClientBadge name={mainTask.client.name} className="mt-1" />
                           )}
                         </div>
-                      </TableCell>
-                      <TableCell>{subtask.mainTask.title}</TableCell>
-                      <TableCell>
-                        {subtask.approvedAt ? 
-                          new Date(subtask.approvedAt).toLocaleString('pt-BR') : 
-                          'Não informado'
-                        }
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          {subtask.actualHours && (
-                            <span className="text-sm">{subtask.actualHours}h</span>
-                          )}
-                          <Badge variant="outline" className="bg-green-100 text-green-800">
-                            ✅ Aprovada
-                          </Badge>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleOpenDetails(subtask)}
-                                className="h-8 w-8 p-0 hover:bg-muted"
-                              >
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p className="text-xs">Ver detalhes</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {getTabSubtasks.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                        Nenhuma tarefa aprovada
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+                        <Badge variant="outline" className="shrink-0">
+                          {projectSubtasks.length} tarefa{projectSubtasks.length !== 1 ? 's' : ''}
+                        </Badge>
+                      </div>
+                      <div className="mt-3">
+                        {projectSubtasks.length > 0 ? (
+                          <TaskSequenceProgressBar
+                            subtasks={projectSubtasks.map((s: any) => ({
+                              id: s.id,
+                              title: s.title,
+                              status: s.status,
+                              mainTaskId: s.mainTaskId,
+                              dependencies: s.dependencies,
+                            }))}
+                            className="max-w-full"
+                            onTaskClick={(subtask) => {
+                              const s = projectSubtasks.find((p: any) => p.id === subtask.id)
+                              if (s) handleOpenDetails(s)
+                            }}
+                          />
+                        ) : (
+                          <div className="h-8 rounded-md bg-muted/30 flex items-center justify-center text-xs text-muted-foreground">
+                            Nenhuma tarefa
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

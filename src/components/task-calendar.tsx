@@ -3,17 +3,20 @@
 import * as React from 'react'
 import { addDays, addMonths, addWeeks, subMonths, subWeeks, format, getDaysInMonth, isSameDay, isSameMonth, startOfMonth, startOfWeek } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, CheckCircle2, XCircle, Clock, RotateCcw, Plus } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, CheckCircle2, XCircle, Clock, RotateCcw, HelpCircle } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/lib/api'
 import { SubtaskStatus, RecurringType, WeekDay, Priority } from '@prisma/client'
 import { TaskCalendarSidebar } from './task-calendar-sidebar'
 import { SubtaskDetailsModal } from './subtask-details-modal'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 
 interface TaskCalendarProps {
   currentUser: {
@@ -422,37 +425,36 @@ export function TaskCalendar({ currentUser }: TaskCalendarProps) {
     if (tasks.length === 0) return null
 
     return (
-      <div className="space-y-1 mt-1">
+      <div className="space-y-0.5 mt-0.5">
         {tasks.slice(0, 3).map((task) => {
           const status = getTaskStatusOnDate(task, date)
           return (
             <div
               key={`${task.id}-${dayKey}`}
               className={cn(
-                "text-xs p-1 rounded truncate flex items-center gap-1 cursor-pointer hover:opacity-80 transition-opacity",
+                "text-[11px] px-1.5 py-0.5 rounded truncate flex items-center gap-1 cursor-pointer transition-opacity hover:opacity-90",
                 status === 'completed' 
-                  ? 'bg-green-100 text-green-800' 
+                  ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' 
                   : status === 'overdue'
-                  ? 'bg-red-100 text-red-800'
+                  ? 'bg-red-500/15 text-red-700 dark:text-red-400'
                   : status === 'pending-approval'
-                  ? 'bg-orange-100 text-orange-800'
-                  : 'bg-yellow-100 text-yellow-800'
+                  ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400'
+                  : 'bg-muted/50 text-muted-foreground'
               )}
-              title={`${task.title} - ${task.mainTask.title} (clique para ver detalhes)`}
+              title={`${task.title} - ${task.mainTask.title}`}
               onClick={() => handleOpenDetails(task)}
             >
-              {status === 'completed' && <CheckCircle2 className="h-3 w-3 flex-shrink-0" />}
-              {status === 'overdue' && <XCircle className="h-3 w-3 flex-shrink-0" />}
-              {status === 'pending-approval' && <Clock className="h-3 w-3 flex-shrink-0" />}
-              {status === 'pending' && <Clock className="h-3 w-3 flex-shrink-0" />}
-              {task.isRecurring && <RotateCcw className="h-3 w-3 flex-shrink-0" />}
+              {status === 'completed' && <CheckCircle2 className="h-2.5 w-2.5 flex-shrink-0 opacity-70" />}
+              {status === 'overdue' && <XCircle className="h-2.5 w-2.5 flex-shrink-0 opacity-70" />}
+              {(status === 'pending-approval' || status === 'pending') && <Clock className="h-2.5 w-2.5 flex-shrink-0 opacity-70" />}
+              {task.isRecurring && <RotateCcw className="h-2.5 w-2.5 flex-shrink-0 opacity-70" />}
               <span className="truncate">{task.title}</span>
             </div>
           )
         })}
         {tasks.length > 3 && (
-          <div className="text-xs text-muted-foreground text-center">
-            +{tasks.length - 3} mais
+          <div className="text-[10px] text-muted-foreground">
+            +{tasks.length - 3}
           </div>
         )}
       </div>
@@ -502,20 +504,9 @@ export function TaskCalendar({ currentUser }: TaskCalendarProps) {
 
   if (isLoading) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <CalendarIcon className="h-5 w-5" />
-            Calendário de Tarefas
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-center py-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-            <span className="ml-2">Carregando calendário...</span>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="flex items-center justify-center py-16">
+        <div className="app-spinner-md" />
+      </div>
     )
   }
 
@@ -529,82 +520,80 @@ export function TaskCalendar({ currentUser }: TaskCalendarProps) {
       />
       
       {/* Conteúdo Principal */}
-      <div className="flex-1 flex flex-col">
-        <Card className="flex-1">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <CalendarIcon className="h-5 w-5" />
-                Calendário de Tarefas
-              </CardTitle>
-              <Tabs value={view} onValueChange={(v) => setView(v as CalendarView)} className="w-auto">
-                <TabsList className="grid w-auto grid-cols-3 h-9 rounded-lg">
-                  <TabsTrigger value="day" className="px-3 text-xs sm:text-sm">
-                    Dia
-                  </TabsTrigger>
-                  <TabsTrigger value="week" className="px-3 text-xs sm:text-sm">
-                    Semana
-                  </TabsTrigger>
-                  <TabsTrigger value="month" className="px-3 text-xs sm:text-sm">
-                    Mês
-                  </TabsTrigger>
+      <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex-1 flex flex-col min-h-0">
+          {/* Header compacto */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-4">
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={goToToday} className="h-8 text-xs">
+                Hoje
+              </Button>
+              <div className="flex items-center border rounded-md">
+                <Button variant="ghost" size="icon" onClick={goToPrev} className="h-8 w-8">
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span className="px-3 text-sm font-medium min-w-[180px] text-center">
+                  {formatHeaderTitle()}
+                </span>
+                <Button variant="ghost" size="icon" onClick={goToNext} className="h-8 w-8">
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Tabs value={view} onValueChange={(v) => setView(v as CalendarView)}>
+                <TabsList className="h-8">
+                  <TabsTrigger value="day" className="text-xs px-3">Dia</TabsTrigger>
+                  <TabsTrigger value="week" className="text-xs px-3">Semana</TabsTrigger>
+                  <TabsTrigger value="month" className="text-xs px-3">Mês</TabsTrigger>
                 </TabsList>
               </Tabs>
-            </div>
-            
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={goToToday} className="rounded-full px-4 text-sm font-medium">
-                  Hoje
-                </Button>
-                <div className="flex items-center">
-                  <Button variant="ghost" size="icon" onClick={goToPrev} className="rounded-full">
-                    <ChevronLeft className="h-5 w-5" />
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+                    <HelpCircle className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" onClick={goToNext} className="rounded-full">
-                    <ChevronRight className="h-5 w-5" />
-                  </Button>
-                </div>
-                <h2 className="text-lg font-semibold">{formatHeaderTitle()}</h2>
-              </div>
-              
-              <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-green-100 rounded"></div>
-                  <span>Concluída</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-red-100 rounded"></div>
-                  <span>Atrasada</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-orange-100 rounded"></div>
-                  <span>Aguardando Aprovação</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-yellow-100 rounded"></div>
-                  <span>Pendente</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <RotateCcw className="h-3 w-3" />
-                  <span>Recorrente</span>
-                </div>
-              </div>
+                </PopoverTrigger>
+                <PopoverContent className="w-48 p-3" align="end">
+                  <p className="text-xs font-medium mb-2">Legenda</p>
+                  <div className="space-y-1.5 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-emerald-500/80" />
+                      Concluída
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-red-500/80" />
+                      Atrasada
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-amber-500/80" />
+                      Aguardando
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-slate-400/80" />
+                      Pendente
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <RotateCcw className="h-3 w-3" />
+                      Recorrente
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
-          </CardHeader>
-          
-          <CardContent>
-        <div className="space-y-4">
+          </div>
+
+          <div className="space-y-4 flex-1 min-h-0">
           {/* Calendário */}
           <div className={cn(
-            "h-full border rounded-lg overflow-hidden",
+            "border rounded-lg overflow-hidden bg-background",
             view === 'day' ? "grid grid-cols-1" : 
             view === 'week' ? "grid grid-cols-7" : 
             "grid grid-cols-7"
           )}>
             {/* Cabeçalhos dos dias da semana - apenas para semana e mês */}
             {(view === 'week' || view === 'month') && ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day) => (
-              <div key={day} className="p-3 text-center text-sm font-medium border-r border-b bg-gray-50">
+              <div key={day} className="py-2 text-center text-xs font-medium text-muted-foreground border-b bg-muted/30">
                 {day}
               </div>
             ))}
@@ -621,28 +610,28 @@ export function TaskCalendar({ currentUser }: TaskCalendarProps) {
                 <div
                   key={index}
                   className={cn(
-                    "p-2 border-r border-b relative transition-colors cursor-pointer",
-                    view === 'day' ? "min-h-[400px]" : "min-h-[120px]",
-                    view === 'month' && !isCurrentMonth && "bg-gray-50/50 text-gray-400",
-                    isSelected && "bg-blue-50",
-                    "hover:bg-gray-50"
+                    "p-1.5 border-b border-r last:border-r-0 relative transition-colors cursor-pointer",
+                    view === 'day' ? "min-h-[400px]" : "min-h-[100px]",
+                    view === 'month' && !isCurrentMonth && "bg-muted/20 text-muted-foreground",
+                    isSelected && "bg-primary/5",
+                    "hover:bg-muted/30"
                   )}
                   onClick={() => setSelectedDate(day)}
                 >
-                  <div className="flex justify-between items-center mb-1">
+                  <div className="flex justify-between items-center mb-0.5">
                     <span
                       className={cn(
-                        "flex items-center justify-center h-7 w-7 text-sm rounded-full",
-                        isToday && "bg-blue-600 text-white font-medium",
-                        isSelected && !isToday && "border-2 border-blue-600 text-blue-600 font-medium",
+                        "flex items-center justify-center h-6 w-6 text-xs rounded-full",
+                        isToday && "bg-primary text-primary-foreground font-medium",
+                        isSelected && !isToday && "ring-1 ring-primary ring-inset text-primary font-medium",
                       )}
                     >
                       {format(day, 'd')}
                     </span>
                     {tasks.length > 0 && (
-                      <Badge variant="secondary" className="h-5 text-xs">
+                      <span className="text-[10px] text-muted-foreground tabular-nums">
                         {tasks.length}
-                      </Badge>
+                      </span>
                     )}
                   </div>
                   
@@ -654,10 +643,9 @@ export function TaskCalendar({ currentUser }: TaskCalendarProps) {
 
           {/* Detalhes do dia selecionado */}
           {selectedDate && (
-            <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-              <h3 className="font-medium mb-3 flex items-center gap-2">
-                <CalendarIcon className="h-4 w-4" />
-                Tarefas para {format(selectedDate, "dd/MM/yyyy", { locale: ptBR })}
+            <div className="mt-4 p-4 rounded-lg bg-muted/20 border">
+              <h3 className="text-sm font-medium mb-2">
+                {format(selectedDate, "EEEE, dd/MM", { locale: ptBR })}
               </h3>
               {(() => {
                 const dayKey = format(selectedDate, 'yyyy-MM-dd')
@@ -665,61 +653,40 @@ export function TaskCalendar({ currentUser }: TaskCalendarProps) {
                 
                 if (tasks.length === 0) {
                   return (
-                    <div className="flex flex-col items-center justify-center py-8 text-center">
-                      <CalendarIcon className="h-12 w-12 text-gray-300 mb-2" />
-                      <p className="text-muted-foreground text-sm">
-                        Nenhuma tarefa para este dia
-                      </p>
-                    </div>
+                    <p className="text-muted-foreground text-xs py-4">
+                      Nenhuma tarefa para este dia
+                    </p>
                   )
                 }
 
                 return (
-                  <div className="space-y-2">
+                  <div className="space-y-1">
                     {tasks.map((task) => {
                       const status = getTaskStatusOnDate(task, selectedDate)
                       return (
                         <div
                           key={`${task.id}-${dayKey}`}
-                          className="flex items-center justify-between p-3 bg-white rounded-lg border shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+                          className="flex items-center justify-between px-2.5 py-2 rounded-md bg-background border cursor-pointer hover:bg-muted/30 transition-colors"
                           onClick={() => handleOpenDetails(task)}
                         >
-                          <div className="flex items-center gap-3">
-                            {status === 'completed' && <CheckCircle2 className="h-5 w-5 text-green-600" />}
-                            {status === 'overdue' && <XCircle className="h-5 w-5 text-red-600" />}
-                            {status === 'pending-approval' && <Clock className="h-5 w-5 text-orange-600" />}
-                            {status === 'pending' && <Clock className="h-5 w-5 text-yellow-600" />}
-                            {task.isRecurring && <RotateCcw className="h-5 w-5 text-blue-600" />}
-                            <div>
-                              <div className="font-medium text-sm">{task.title}</div>
-                              <div className="text-xs text-muted-foreground">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {status === 'completed' && <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />}
+                            {status === 'overdue' && <XCircle className="h-4 w-4 text-red-600 shrink-0" />}
+                            {(status === 'pending-approval' || status === 'pending') && <Clock className="h-4 w-4 text-amber-600 shrink-0" />}
+                            {task.isRecurring && <RotateCcw className="h-4 w-4 text-muted-foreground shrink-0" />}
+                            <div className="min-w-0">
+                              <div className="font-medium text-xs truncate">{task.title}</div>
+                              <div className="text-[11px] text-muted-foreground truncate">
                                 {task.mainTask.title}
                               </div>
-                              {task.assignedTo && (
-                                <div className="text-xs text-muted-foreground mt-1">
-                                  Atribuído para: {task.assignedTo.name}
-                                </div>
-                              )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <Badge
-                              variant={
-                                status === 'completed' ? 'default' : 
-                                status === 'overdue' ? 'destructive' : 
-                                status === 'pending-approval' ? 'secondary' : 
-                                'secondary'
-                              }
-                              className={
-                                status === 'pending-approval' ? 'bg-orange-100 text-orange-800 hover:bg-orange-200' : ''
-                              }
-                            >
-                              {status === 'completed' ? 'Concluída' : 
-                               status === 'overdue' ? 'Atrasada' : 
-                               status === 'pending-approval' ? 'Aguardando Aprovação' : 
-                               'Pendente'}
-                            </Badge>
-                          </div>
+                          <span className="text-[10px] text-muted-foreground shrink-0">
+                            {status === 'completed' ? 'Concluída' : 
+                             status === 'overdue' ? 'Atrasada' : 
+                             status === 'pending-approval' ? 'Aguardando' : 
+                             'Pendente'}
+                          </span>
                         </div>
                       )
                     })}
@@ -729,8 +696,7 @@ export function TaskCalendar({ currentUser }: TaskCalendarProps) {
             </div>
           )}
         </div>
-          </CardContent>
-        </Card>
+        </div>
       </div>
 
       {/* Modal de Detalhes da Subtarefa */}

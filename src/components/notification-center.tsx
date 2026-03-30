@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Bell, Check, CheckCheck, Settings, X } from 'lucide-react'
+import { Bell, Check, CheckCheck, Settings, X, CheckCircle, ClipboardList, Ban, Clock, PartyPopper, Unlock, DollarSign } from 'lucide-react'
 import { useNotifications } from '@/hooks/use-notifications'
 
 interface NotificationCenterProps {
@@ -36,21 +36,28 @@ export function NotificationCenter({ userId }: NotificationCenterProps) {
   } = useNotifications(userId)
 
   const getNotificationIcon = (type: string) => {
+    const iconClass = 'h-4 w-4'
     switch (type) {
       case 'SUBTASK_COMPLETED':
-        return '✅'
+        return <CheckCircle className={iconClass} />
       case 'SUBTASK_ASSIGNED':
-        return '📋'
+        return <ClipboardList className={iconClass} />
       case 'SUBTASK_BLOCKED':
-        return '🚫'
+        return <Ban className={iconClass} />
       case 'SUBTASK_OVERDUE':
-        return '⏰'
+        return <Clock className={iconClass} />
       case 'MAIN_TASK_COMPLETED':
-        return '🎉'
+        return <PartyPopper className={iconClass} />
       case 'DEPENDENCY_RESOLVED':
-        return '🔓'
+        return <Unlock className={iconClass} />
+      case 'SERVICE_PAYMENT_CREATED':
+      case 'SERVICE_PAYMENT_APPROVED':
+      case 'SERVICE_PAYMENT_PAID':
+        return <DollarSign className={iconClass} />
+      case 'SERVICE_PAYMENT_REJECTED':
+        return <Ban className={iconClass} />
       default:
-        return '🔔'
+        return <Bell className={iconClass} />
     }
   }
 

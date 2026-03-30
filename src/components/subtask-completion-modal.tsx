@@ -110,14 +110,14 @@ export function SubtaskCompletionModal({
         if (result.newStatus === SubtaskStatus.COMPLETED_PENDING) {
           toast.success('Tarefa concluída com sucesso!')
         } else if (result.newStatus === SubtaskStatus.BLOCKED) {
-          toast.success('⏸️ Subtarefa marcada como bloqueada por dependências pendentes.')
+          toast.success('Tarefa marcada como bloqueada por dependências pendentes.')
         }
         
         onSuccess()
         onOpenChange(false)
       }
     } catch (error: any) {
-      toast.error(`Erro ao concluir subtarefa: ${error.message}`)
+      toast.error(`Erro ao concluir tarefa: ${error.message}`)
     } finally {
       setIsConfirming(false)
     }
@@ -190,7 +190,7 @@ export function SubtaskCompletionModal({
       case SubtaskStatus.BLOCKED:
         return <Badge variant="destructive" className="bg-red-100 text-red-800">Bloqueado</Badge>
       case SubtaskStatus.COMPLETED_PENDING:
-        return <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">Aguardando Aprovação</Badge>
+        return <Badge variant="secondary" className="bg-warning text-warning-foreground">Aguardando Aprovação</Badge>
       case SubtaskStatus.APPROVED:
         return <Badge variant="secondary" className="bg-green-100 text-green-800">Aprovado</Badge>
       case SubtaskStatus.REJECTED:
@@ -306,7 +306,7 @@ export function SubtaskCompletionModal({
           {/* Verificação de dependências */}
           {isLoading ? (
             <div className="flex items-center space-x-2 p-4 bg-gray-50 rounded-lg">
-              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+              <div className="app-spinner-sm" />
               <span className="text-sm text-gray-600">Verificando dependências...</span>
             </div>
           ) : dependencyCheck ? (
@@ -319,7 +319,7 @@ export function SubtaskCompletionModal({
                       Todas as dependências foram resolvidas
                     </p>
                     <p className="text-xs text-green-600">
-                      A subtarefa será marcada como "Aguardando Aprovação" do gestor
+                      A tarefa será marcada como "Aguardando Aprovação" do gestor
                     </p>
                   </div>
                 </div>
@@ -332,7 +332,7 @@ export function SubtaskCompletionModal({
                         Há dependências pendentes
                       </p>
                       <p className="text-xs text-amber-600">
-                        A subtarefa será marcada como "Bloqueado" até que todas as dependências sejam aprovadas
+                        A tarefa será marcada como "Bloqueado" até que todas as dependências sejam aprovadas
                       </p>
                     </div>
                     <Button
@@ -396,7 +396,7 @@ export function SubtaskCompletionModal({
           >
             {isConfirming ? (
               <div className="flex items-center space-x-2">
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                <div className="app-spinner-inverse" />
                 <span>Concluindo...</span>
               </div>
             ) : (

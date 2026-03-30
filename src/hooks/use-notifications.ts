@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { CheckCircle, ClipboardList, Ban, Clock, PartyPopper, Unlock, Bell, DollarSign } from 'lucide-react'
 import { api } from '@/lib/api'
 import toast from 'react-hot-toast'
 
@@ -58,35 +59,40 @@ export function useNotifications(userId: string) {
 
     newNotifications.forEach(notification => {
       const getToastIcon = (type: string) => {
+        const iconClass = 'h-4 w-4'
         switch (type) {
           case 'SUBTASK_COMPLETED':
-            return '✅'
+            return <CheckCircle className={iconClass} />
           case 'SUBTASK_ASSIGNED':
-            return '📋'
+            return <ClipboardList className={iconClass} />
           case 'SUBTASK_BLOCKED':
-            return '🚫'
+            return <Ban className={iconClass} />
           case 'SUBTASK_OVERDUE':
-            return '⏰'
+            return <Clock className={iconClass} />
           case 'MAIN_TASK_COMPLETED':
-            return '🎉'
+            return <PartyPopper className={iconClass} />
           case 'DEPENDENCY_RESOLVED':
-            return '🔓'
+            return <Unlock className={iconClass} />
+          case 'SERVICE_PAYMENT_CREATED':
+          case 'SERVICE_PAYMENT_APPROVED':
+          case 'SERVICE_PAYMENT_PAID':
+            return <DollarSign className={iconClass} />
+          case 'SERVICE_PAYMENT_REJECTED':
+            return <Ban className={iconClass} />
           default:
-            return '🔔'
+            return <Bell className={iconClass} />
         }
       }
 
-      toast(
-        `${getToastIcon(notification.type)} ${notification.message}`,
-        {
-          duration: 5000,
-          position: 'top-right',
-          style: {
-            background: '#3b82f6',
-            color: '#fff',
-          },
-        }
-      )
+      toast(notification.message, {
+        duration: 5000,
+        position: 'top-right',
+        icon: getToastIcon(notification.type),
+        style: {
+          background: 'hsl(var(--primary))',
+          color: 'hsl(var(--primary-foreground))',
+        },
+      })
     })
 
     if (newNotifications.length > 0) {

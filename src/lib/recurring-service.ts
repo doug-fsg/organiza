@@ -226,11 +226,11 @@ export class RecurringTaskService {
       })
 
       if (!subtask) {
-        throw new Error('Subtarefa não encontrada')
+        throw new Error('Tarefa não encontrada')
       }
 
       if (!subtask.isRecurring || !subtask.recurringType) {
-        throw new Error('Subtarefa não é recorrente')
+        throw new Error('Tarefa não é recorrente')
       }
 
       // Calcular próxima data de reabertura

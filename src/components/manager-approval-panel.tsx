@@ -35,6 +35,7 @@ import { api } from '@/lib/api'
 import toast from 'react-hot-toast'
 import { SubtaskDetailsModal } from './subtask-details-modal'
 import { useNotificationSound } from '@/hooks/use-notification-sound'
+import { getPriorityClasses, getStatusClasses } from '@/lib/theme-utils'
 
 interface User {
   id: string
@@ -129,7 +130,7 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
       utils.mainTask.getAll.invalidate()
       toast.success(`✅ ${result.message}`)
       if (result.unblockedSubtasks && result.unblockedSubtasks.length > 0) {
-        toast.success(`🔓 ${result.unblockedSubtasks.length} subtarefa(s) foi(ram) desbloqueada(s)!`)
+        toast.success(`🔓 ${result.unblockedSubtasks.length} tarefa(s) foi(ram) desbloqueada(s)!`)
       }
     },
     onError: (error) => {
@@ -141,7 +142,7 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
     onSuccess: (result) => {
       utils.mainTask.getAll.invalidate()
       setRejectionModal({ isOpen: false, subtaskId: '', reason: '' })
-      toast.success(`❌ ${result.message}`)
+      toast.success(result.message)
     },
     onError: (error) => {
       toast.error(`Erro ao reprovar: ${error.message}`)
@@ -151,7 +152,7 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
   const reassignSubtask = api.subtask.reassign.useMutation({
     onSuccess: () => {
       utils.mainTask.getAll.invalidate()
-      toast.success('Subtarefa reassignada com sucesso!')
+      toast.success('Tarefa reassignada com sucesso!')
     },
     onError: (error) => {
       toast.error(`Erro ao reassignar: ${error.message}`)
@@ -274,6 +275,48 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
     return filtered
   }, [activeFilter, userFilter, getPendingSubtasks, getBlockedSubtasks, getApprovedSubtasks, getAllSubtasks])
 
+  // Ordenar subtarefas filtradas - DEVE estar antes de qualquer early return (Rules of Hooks)
+  const sortedSubtasks = useMemo(() => {
+    const filtered = getFilteredSubtasks
+    return [...filtered].sort((a: any, b: any) => {
+      const aHasUnread = a.comments?.some((comment: any) => {
+        if (comment.authorId === currentUser.id) return false
+        try {
+          const readBy = comment.readBy ? JSON.parse(comment.readBy) : []
+          return !readBy.includes(currentUser.id)
+        } catch {
+          return true
+        }
+      }) || false
+      
+      const bHasUnread = b.comments?.some((comment: any) => {
+        if (comment.authorId === currentUser.id) return false
+        try {
+          const readBy = comment.readBy ? JSON.parse(comment.readBy) : []
+          return !readBy.includes(currentUser.id)
+        } catch {
+          return true
+        }
+      }) || false
+      
+      if (aHasUnread && !bHasUnread) return -1
+      if (!aHasUnread && bHasUnread) return 1
+      
+      if (activeFilter === 'approved') {
+        const dateA = a.approvedAt ? new Date(a.approvedAt).getTime() : 0
+        const dateB = b.approvedAt ? new Date(b.approvedAt).getTime() : 0
+        return dateB - dateA
+      }
+      
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    })
+  }, [getFilteredSubtasks, currentUser.id, activeFilter])
+
+  // Resetar página quando filtro muda - DEVE estar antes de qualquer early return (Rules of Hooks)
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [activeFilter, userFilter])
+
   const getSubtasksWithUnreadComments = (subtasksList?: any[]) => {
     if (!mainTasks) return 0
     const subsToCheck = subtasksList || getAllSubtasks
@@ -340,39 +383,9 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
     })
   }
 
-  const getPriorityColor = (priority: Priority) => {
-    switch (priority) {
-      case Priority.URGENT:
-        return 'bg-red-100 text-red-800'
-      case Priority.HIGH:
-        return 'bg-orange-100 text-orange-800'
-      case Priority.MEDIUM:
-        return 'bg-yellow-100 text-yellow-800'
-      case Priority.LOW:
-        return 'bg-green-100 text-green-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
-    }
-  }
+  const getPriorityColor = (priority: Priority) => getPriorityClasses(priority)
 
-  const getStatusColor = (status: SubtaskStatus) => {
-    switch (status) {
-      case SubtaskStatus.TODO:
-        return 'bg-gray-100 text-gray-800'
-      case SubtaskStatus.IN_PROGRESS:
-        return 'bg-blue-100 text-blue-800'
-      case SubtaskStatus.BLOCKED:
-        return 'bg-red-100 text-red-800'
-      case SubtaskStatus.COMPLETED_PENDING:
-        return 'bg-yellow-100 text-yellow-800'
-      case SubtaskStatus.APPROVED:
-        return 'bg-green-100 text-green-800'
-      case SubtaskStatus.REJECTED:
-        return 'bg-red-100 text-red-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
-    }
-  }
+  const getStatusColor = (status: SubtaskStatus) => getStatusClasses(status)
 
   const getStatusLabel = (status: SubtaskStatus) => {
     switch (status) {
@@ -436,7 +449,7 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
         case SubtaskStatus.BLOCKED:
           return 'mb-4 hover:shadow-md transition-shadow border-l-4 border-red-500 bg-red-50/50'
         case SubtaskStatus.COMPLETED_PENDING:
-          return 'mb-4 hover:shadow-md transition-shadow border-l-4 border-yellow-500 bg-yellow-50/30'
+          return 'mb-4 hover:shadow-md transition-shadow border-l-4 border-warning bg-warning/10'
         case SubtaskStatus.APPROVED:
           return 'mb-4 hover:shadow-md transition-shadow border-l-4 border-green-500 bg-green-50/20'
         default:
@@ -599,9 +612,9 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <div className="text-center py-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="text-gray-600 mt-2">Carregando subtarefas...</p>
+        <div className="page-loading-inline flex-col gap-2">
+          <div className="app-spinner-md" />
+          <p className="state-message">Carregando tarefas...</p>
         </div>
       </div>
     )
@@ -612,57 +625,11 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
   const approvedSubtasks = getApprovedSubtasks
   const allSubtasks = getAllSubtasks
 
-  // Ordenar e paginar subtarefas filtradas
-  const sortedSubtasks = useMemo(() => {
-    const filtered = getFilteredSubtasks
-    return [...filtered].sort((a: any, b: any) => {
-      // Calcular se tem comentários não lidos
-      const aHasUnread = a.comments?.some((comment: any) => {
-        if (comment.authorId === currentUser.id) return false
-        try {
-          const readBy = comment.readBy ? JSON.parse(comment.readBy) : []
-          return !readBy.includes(currentUser.id)
-        } catch {
-          return true
-        }
-      }) || false
-      
-      const bHasUnread = b.comments?.some((comment: any) => {
-        if (comment.authorId === currentUser.id) return false
-        try {
-          const readBy = comment.readBy ? JSON.parse(comment.readBy) : []
-          return !readBy.includes(currentUser.id)
-        } catch {
-          return true
-        }
-      }) || false
-      
-      // Tarefas com comentários não lidos no topo
-      if (aHasUnread && !bHasUnread) return -1
-      if (!aHasUnread && bHasUnread) return 1
-      
-      // Para aprovadas, ordenar por data de aprovação
-      if (activeFilter === 'approved') {
-        const dateA = a.approvedAt ? new Date(a.approvedAt).getTime() : 0
-        const dateB = b.approvedAt ? new Date(b.approvedAt).getTime() : 0
-        return dateB - dateA
-      }
-      
-      // Para outras, ordenar por data de criação (mais recentes primeiro)
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    })
-  }, [getFilteredSubtasks, currentUser.id, activeFilter])
-
   // Calcular paginação
   const totalPages = Math.ceil(sortedSubtasks.length / ITEMS_PER_PAGE)
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
   const endIndex = startIndex + ITEMS_PER_PAGE
   const paginatedSubtasks = sortedSubtasks.slice(startIndex, endIndex)
-
-  // Resetar para página 1 quando o filtro muda
-  useEffect(() => {
-    setCurrentPage(1)
-  }, [activeFilter, userFilter])
 
   // Função para obter mensagem quando não há tarefas
   const getEmptyMessage = () => {
@@ -768,8 +735,8 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
         >
           <CardContent className="flex items-center py-2 px-3">
             <div className="flex items-center space-x-1.5 w-full">
-              <div className="w-5 h-5 bg-yellow-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <Clock className="h-3 w-3 text-yellow-600" />
+              <div className="w-5 h-5 bg-warning/20 rounded-full flex items-center justify-center flex-shrink-0">
+                <Clock className="h-3 w-3 text-warning-foreground" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-base font-semibold leading-tight">{pendingSubtasks.length}</p>
@@ -917,7 +884,7 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
       }>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>Reprovar Subtarefa</DialogTitle>
+            <DialogTitle>Reprovar Tarefa</DialogTitle>
             <DialogDescription>
               Informe o motivo da reprovação. O responsável será notificado.
             </DialogDescription>
@@ -963,9 +930,9 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
       }>
         <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Histórico da Subtarefa</DialogTitle>
+            <DialogTitle>Histórico da Tarefa</DialogTitle>
             <DialogDescription>
-              Acompanhe todas as ações realizadas nesta subtarefa.
+              Acompanhe todas as ações realizadas nesta tarefa.
             </DialogDescription>
           </DialogHeader>
           

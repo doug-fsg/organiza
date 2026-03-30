@@ -25,6 +25,7 @@ import {
   Activity
 } from 'lucide-react'
 import { api } from '@/lib/api'
+import { getPriorityClasses } from '@/lib/theme-utils'
 
 interface User {
   id: string
@@ -139,20 +140,7 @@ export function GlobalDashboard({ currentUser }: GlobalDashboardProps) {
     }).filter(metric => metric.totalSubtasks > 0)
   }, [mainTasks, users])
 
-  const getPriorityColor = (priority: Priority) => {
-    switch (priority) {
-      case Priority.URGENT:
-        return 'bg-red-100 text-red-800'
-      case Priority.HIGH:
-        return 'bg-orange-100 text-orange-800'
-      case Priority.MEDIUM:
-        return 'bg-yellow-100 text-yellow-800'
-      case Priority.LOW:
-        return 'bg-green-100 text-green-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
-    }
-  }
+  const getPriorityColor = (priority: Priority) => getPriorityClasses(priority)
 
   const getStatusColor = (status: MainTaskStatus) => {
     switch (status) {
@@ -296,7 +284,7 @@ export function GlobalDashboard({ currentUser }: GlobalDashboardProps) {
                 </div>
                 <div>
                   <p className="text-2xl font-bold">{metrics.totalSubtasks}</p>
-                  <p className="text-xs text-muted-foreground">Total Subtarefas</p>
+                  <p className="text-xs text-muted-foreground">Total Tarefas</p>
                 </div>
               </div>
             </CardContent>
@@ -371,7 +359,7 @@ export function GlobalDashboard({ currentUser }: GlobalDashboardProps) {
                       
                       <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-                          <span>📋 {task.subtasks.length} subtarefas</span>
+                          <span>📋 {task.subtasks.length} tarefas</span>
                           <span>👤 {task.creator.name}</span>
                           {task.deadline && (
                             <span>📅 {formatDate(task.deadline)}</span>

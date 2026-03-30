@@ -127,7 +127,7 @@ function SetupPasswordContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <Card className="w-full max-w-md">
           <CardContent className="flex items-center justify-center py-12">
             <div className="text-center space-y-4">
@@ -145,8 +145,8 @@ function SetupPasswordContent() {
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
         <Card className="w-full max-w-md">
           <CardHeader>
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
-              <AlertTriangle className="h-6 w-6 text-red-600" />
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
+              <AlertTriangle className="h-6 w-6 text-destructive" />
             </div>
             <CardTitle className="text-center">Convite Inválido</CardTitle>
             <CardDescription className="text-center">
@@ -171,8 +171,8 @@ function SetupPasswordContent() {
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
         <Card className="w-full max-w-md">
           <CardHeader>
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
-              <CheckCircle2 className="h-6 w-6 text-green-600" />
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-success/10">
+              <CheckCircle2 className="h-6 w-6 text-success" />
             </div>
             <CardTitle className="text-center">Senha Criada com Sucesso!</CardTitle>
             <CardDescription className="text-center">
@@ -230,7 +230,7 @@ function SetupPasswordContent() {
                 disabled={submitting}
               />
               {passwordError && (
-                <p className="text-xs text-red-600">{passwordError}</p>
+                <p className="text-xs text-destructive">{passwordError}</p>
               )}
               <p className="text-xs text-muted-foreground">
                 • Mínimo 8 caracteres<br />

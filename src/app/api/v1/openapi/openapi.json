@@ -1,0 +1,378 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Organiza API",
+    "description": "API REST para integração com o Organiza.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    { "url": "/api/v1", "description": "API Base" }
+  ],
+  "security": [
+    { "api_access_token": [] },
+    { "BearerAuth": [] }
+  ],
+  "components": {
+    "securitySchemes": {
+      "api_access_token": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "api_access_token",
+        "description": "Sua API Key (gerada em Meu Perfil)"
+      },
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "API Key",
+        "description": "Authorization: Bearer <sua_api_key>"
+      }
+    },
+    "schemas": {
+      "Account": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "slug": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Project": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "status": { "type": "string" },
+          "priority": { "type": "string" },
+          "deadline": { "type": "string", "format": "date-time", "nullable": true },
+          "client_id": { "type": "string", "nullable": true },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Subtask": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "status": { "type": "string" },
+          "priority": { "type": "string" },
+          "assigned_to": { "type": "object", "nullable": true },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Client": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "phone": { "type": "string", "nullable": true },
+          "email": { "type": "string", "nullable": true },
+          "address": { "type": "string", "nullable": true },
+          "custom_values": { "type": "object" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ClientCustomAttribute": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "type": { "type": "string", "enum": ["TEXT", "NUMBER", "DATE", "BOOLEAN", "FILE"] },
+          "order": { "type": "integer" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ApiResponse": {
+        "type": "object",
+        "properties": {
+          "payload": { "description": "Dados retornados" },
+          "meta": {
+            "type": "object",
+            "properties": { "count": { "type": "integer" } }
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/accounts/{account_id}": {
+      "get": {
+        "tags": ["Accounts"],
+        "summary": "Obter detalhes da conta",
+        "parameters": [
+          { "name": "account_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Sucesso" },
+          "401": { "description": "Token inválido" }
+        }
+      }
+    },
+    "/accounts/{account_id}/projects": {
+      "get": {
+        "tags": ["Projects"],
+        "summary": "Listar projetos",
+        "parameters": [
+          { "name": "account_id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "status", "in": "query", "schema": { "type": "string" } },
+          { "name": "client_id", "in": "query", "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer" } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer" } }
+        ],
+        "responses": { "200": { "description": "Lista de projetos" }, "401": { "description": "Não autorizado" } }
+      },
+      "post": {
+        "tags": ["Projects"],
+        "summary": "Criar projeto",
+        "parameters": [{ "name": "account_id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["title"],
+                "properties": {
+                  "title": { "type": "string" },
+                  "description": { "type": "string" },
+                  "priority": { "type": "string" },
+                  "deadline": { "type": "string" },
+                  "client_id": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Projeto criado" }, "401": { "description": "Não autorizado" } }
+      }
+    },
+    "/accounts/{account_id}/projects/{project_id}": {
+      "get": {
+        "tags": ["Projects"],
+        "summary": "Obter projeto",
+        "parameters": [
+          { "name": "account_id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "project_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Projeto" }, "404": { "description": "Não encontrado" } }
+      },
+      "patch": {
+        "tags": ["Projects"],
+        "summary": "Atualizar projeto",
+        "parameters": [
+          { "name": "account_id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "project_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": { "type": "string" },
+                  "description": { "type": "string" },
+                  "status": { "type": "string" },
+                  "priority": { "type": "string" },
+                  "deadline": { "type": "string" },
+                  "client_id": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Atualizado" }, "404": { "description": "Não encontrado" } }
+      },
+      "delete": {
+        "tags": ["Projects"],
+        "summary": "Excluir projeto",
+        "parameters": [
+          { "name": "account_id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "project_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Excluído" }, "404": { "description": "Não encontrado" } }
+      }
+    },
+    "/accounts/{account_id}/projects/{project_id}/subtasks": {
+      "get": {
+        "tags": ["Subtasks"],
+        "summary": "Listar subtarefas",
+        "parameters": [
+          { "name": "account_id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "project_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Lista de subtarefas" } }
+      },
+      "post": {
+        "tags": ["Subtasks"],
+        "summary": "Criar subtarefa",
+        "parameters": [
+          { "name": "account_id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "project_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["title"],
+                "properties": {
+                  "title": { "type": "string" },
+                  "description": { "type": "string" },
+                  "priority": { "type": "string" },
+                  "deadline": { "type": "string" },
+                  "assigned_to_id": { "type": "string" },
+                  "estimated_hours": { "type": "number" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Subtarefa criada" } }
+      }
+    },
+    "/accounts/{account_id}/clients": {
+      "get": {
+        "tags": ["Clients"],
+        "summary": "Listar clientes",
+        "parameters": [
+          { "name": "account_id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer" } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer" } }
+        ],
+        "responses": { "200": { "description": "Lista de clientes" } }
+      },
+      "post": {
+        "tags": ["Clients"],
+        "summary": "Criar cliente",
+        "parameters": [{ "name": "account_id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "phone": { "type": "string" },
+                  "email": { "type": "string" },
+                  "address": { "type": "string" },
+                  "custom_values": { "type": "object" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Cliente criado" } }
+      }
+    },
+    "/accounts/{account_id}/clients/{client_id}": {
+      "get": {
+        "tags": ["Clients"],
+        "summary": "Obter cliente",
+        "parameters": [
+          { "name": "account_id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "client_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Cliente" }, "404": { "description": "Não encontrado" } }
+      },
+      "patch": {
+        "tags": ["Clients"],
+        "summary": "Atualizar cliente",
+        "parameters": [
+          { "name": "account_id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "client_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "phone": { "type": "string" },
+                  "email": { "type": "string" },
+                  "address": { "type": "string" },
+                  "custom_values": { "type": "object" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Cliente atualizado" }, "404": { "description": "Não encontrado" } }
+      }
+    },
+    "/accounts/{account_id}/client-custom-attributes": {
+      "get": {
+        "tags": ["Client Custom Attributes"],
+        "summary": "Listar atributos personalizados de clientes",
+        "parameters": [
+          { "name": "account_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Lista de atributos" } }
+      },
+      "post": {
+        "tags": ["Client Custom Attributes"],
+        "summary": "Criar atributo personalizado",
+        "parameters": [{ "name": "account_id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "type"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "type": { "type": "string", "enum": ["TEXT", "NUMBER", "DATE", "BOOLEAN", "FILE"] },
+                  "order": { "type": "integer" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Atributo criado" } }
+      }
+    },
+    "/accounts/{account_id}/client-custom-attributes/bulk": {
+      "post": {
+        "tags": ["Client Custom Attributes"],
+        "summary": "Criar atributos personalizados em massa",
+        "parameters": [{ "name": "account_id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["attributes"],
+                "properties": {
+                  "attributes": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": ["name", "type"],
+                      "properties": {
+                        "name": { "type": "string" },
+                        "type": { "type": "string", "enum": ["TEXT", "NUMBER", "DATE", "BOOLEAN", "FILE"] },
+                        "order": { "type": "integer" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Atributos criados" } }
+      }
+    }
+  }
+}

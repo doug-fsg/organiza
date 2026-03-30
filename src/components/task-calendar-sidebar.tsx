@@ -143,13 +143,13 @@ export function TaskCalendarSidebar({
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case 'HIGH':
-        return 'bg-red-500'
+        return 'bg-priority-high'
       case 'MEDIUM':
-        return 'bg-yellow-500'
+        return 'bg-priority-medium'
       case 'LOW':
-        return 'bg-green-500'
+        return 'bg-priority-low'
       default:
-        return 'bg-gray-500'
+        return 'bg-priority-medium'
     }
   }
 
@@ -174,42 +174,42 @@ export function TaskCalendarSidebar({
   }
 
   return (
-    <div className={cn("w-64 p-4 pr-2 border-r shrink-0 hidden md:block bg-white", className)}>
+    <div className={cn("w-52 p-3 pr-2 border-r shrink-0 hidden md:block bg-muted/5", className)}>
 
       {/* Filtros Ativos */}
       {activeFiltersCount > 0 && (
-        <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-blue-900">
-              Filtros Ativos ({activeFiltersCount})
+        <div className="mb-3 p-2 rounded-md bg-muted/40">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs font-medium text-muted-foreground">
+              {activeFiltersCount} filtro{activeFiltersCount !== 1 ? 's' : ''}
             </span>
             <Button 
               variant="ghost" 
               size="sm" 
               onClick={clearAllFilters}
-              className="h-6 px-2 text-xs text-blue-600 hover:text-blue-800"
+              className="h-5 px-1.5 text-xs"
             >
               Limpar
             </Button>
           </div>
-          <div className="flex flex-wrap gap-1">
+          <div className="flex flex-wrap gap-0.5">
             {selectedFilters.assignees?.map((assignee, index) => (
-              <Badge key={`assignee-${assignee}-${index}`} variant="secondary" className="text-xs">
+              <Badge key={`assignee-${assignee}-${index}`} variant="secondary" className="text-[10px] h-5 px-1">
                 {assignee}
               </Badge>
             )) || []}
             {selectedFilters.statuses?.map((status, index) => (
-              <Badge key={`status-${status}-${index}`} variant="secondary" className="text-xs">
+              <Badge key={`status-${status}-${index}`} variant="secondary" className="text-[10px] h-5 px-1">
                 {status?.replace('_', ' ') || status}
               </Badge>
             )) || []}
             {selectedFilters.priorities?.map((priority, index) => (
-              <Badge key={`priority-${priority}-${index}`} variant="secondary" className="text-xs">
+              <Badge key={`priority-${priority}-${index}`} variant="secondary" className="text-[10px] h-5 px-1">
                 {priority}
               </Badge>
             )) || []}
             {selectedFilters.recurringTypes?.map((type, index) => (
-              <Badge key={`recurring-${type}-${index}`} variant="secondary" className="text-xs">
+              <Badge key={`recurring-${type}-${index}`} variant="secondary" className="text-[10px] h-5 px-1">
                 {type}
               </Badge>
             )) || []}
@@ -217,41 +217,40 @@ export function TaskCalendarSidebar({
         </div>
       )}
 
-      <ScrollArea className="h-[calc(100vh-200px)]">
-        <div className="space-y-6 pr-2">
+      <ScrollArea className="h-[calc(100vh-180px)]">
+        <div className="space-y-4 pr-2">
           {/* Filtro por Responsável - só aparece se há múltiplos responsáveis */}
           {hasMultipleAssignees && (
             <div>
               <Collapsible defaultOpen>
-                <CollapsibleTrigger className="flex items-center justify-between w-full mb-2 group">
-                  <div className="flex items-center gap-2 text-sm font-medium">
-                    <User className="w-4 h-4 text-gray-500" />
+                <CollapsibleTrigger className="flex items-center justify-between w-full py-1 group">
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    <User className="w-3.5 h-3.5" />
                     Responsável
                   </div>
-                  <ChevronDown className="w-4 h-4 text-gray-500 transition-transform group-data-[state=open]:rotate-180" />
+                  <ChevronDown className="w-3.5 h-3.5 transition-transform group-data-[state=open]:rotate-180" />
                 </CollapsibleTrigger>
                 <CollapsibleContent>
-                  <div className="space-y-1 pl-6">
+                  <div className="space-y-0.5 pl-4">
                     {assignees.length > 0 ? (
                       assignees.map((assignee, index) => (
-                        <div key={`assignee-item-${assignee}-${index}`} className="flex items-center space-x-2 group py-1">
-                          <Checkbox 
-                            id={`assignee-${assignee}`} 
-                            checked={selectedFilters.assignees?.includes(assignee) || false}
-                            onCheckedChange={() => toggleFilter('assignees', assignee)}
-                            className="rounded-sm" 
-                          />
-                          <div className="w-3 h-3 rounded-full bg-blue-500" />
+                    <div key={`assignee-item-${assignee}-${index}`} className="flex items-center space-x-2 py-0.5">
+                      <Checkbox 
+                        id={`assignee-${assignee}`} 
+                        checked={selectedFilters.assignees?.includes(assignee) || false}
+                        onCheckedChange={() => toggleFilter('assignees', assignee)}
+                        className="rounded-sm h-3.5 w-3.5" 
+                      />
                           <label
                             htmlFor={`assignee-${assignee}`}
-                            className="text-sm leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 group-hover:text-blue-600 cursor-pointer"
+                            className="text-xs cursor-pointer"
                           >
                             {assignee}
                           </label>
                         </div>
                       ))
                     ) : (
-                      <div key="no-assignees" className="text-sm text-gray-500 pl-6">Nenhum responsável encontrado</div>
+                      <div key="no-assignees" className="text-xs text-muted-foreground pl-4">Nenhum responsável</div>
                     )}
                   </div>
                 </CollapsibleContent>
@@ -261,16 +260,16 @@ export function TaskCalendarSidebar({
 
           {/* Filtro por Status */}
           <div>
-            <Collapsible defaultOpen>
-              <CollapsibleTrigger className="flex items-center justify-between w-full mb-2 group">
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  <CheckSquare className="w-4 h-4 text-gray-500" />
+            <Collapsible defaultOpen={false}>
+              <CollapsibleTrigger className="flex items-center justify-between w-full py-1 group">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <CheckSquare className="w-3.5 h-3.5" />
                   Status
                 </div>
-                <ChevronDown className="w-4 h-4 text-gray-500 transition-transform group-data-[state=open]:rotate-180" />
+                <ChevronDown className="w-3.5 h-3.5 transition-transform group-data-[state=open]:rotate-180" />
               </CollapsibleTrigger>
               <CollapsibleContent>
-                <div className="space-y-1 pl-6">
+                  <div className="space-y-0.5 pl-4">
                   {statuses.map((status, index) => (
                     <div key={`status-item-${status.value}-${index}`} className="flex items-center space-x-2 group py-1">
                       <Checkbox 
@@ -282,7 +281,7 @@ export function TaskCalendarSidebar({
                       <div className={cn("w-3 h-3 rounded-sm", getStatusColor(status.value))} />
                       <label
                         htmlFor={`status-${status.value}`}
-                        className="text-sm leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 group-hover:text-blue-600 cursor-pointer flex items-center gap-1"
+                        className="text-xs cursor-pointer flex items-center gap-1"
                       >
                         {getStatusIcon(status.value)}
                         {status.label}
@@ -296,16 +295,16 @@ export function TaskCalendarSidebar({
 
           {/* Filtro por Prioridade */}
           <div>
-            <Collapsible defaultOpen>
-              <CollapsibleTrigger className="flex items-center justify-between w-full mb-2 group">
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  <AlertCircle className="w-4 h-4 text-gray-500" />
+            <Collapsible defaultOpen={false}>
+              <CollapsibleTrigger className="flex items-center justify-between w-full py-1 group">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <AlertCircle className="w-3.5 h-3.5" />
                   Prioridade
                 </div>
-                <ChevronDown className="w-4 h-4 text-gray-500 transition-transform group-data-[state=open]:rotate-180" />
+                <ChevronDown className="w-3.5 h-3.5 transition-transform group-data-[state=open]:rotate-180" />
               </CollapsibleTrigger>
               <CollapsibleContent>
-                <div className="space-y-1 pl-6">
+                  <div className="space-y-0.5 pl-4">
                   {priorities.map((priority, index) => (
                     <div key={`priority-item-${priority.value}-${index}`} className="flex items-center space-x-2 group py-1">
                       <Checkbox 
@@ -317,7 +316,7 @@ export function TaskCalendarSidebar({
                       <div className={cn("w-3 h-3 rounded-sm", getPriorityColor(priority.value))} />
                       <label
                         htmlFor={`priority-${priority.value}`}
-                        className="text-sm leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 group-hover:text-blue-600 cursor-pointer"
+                        className="text-xs cursor-pointer"
                       >
                         {priority.label}
                       </label>
@@ -330,16 +329,16 @@ export function TaskCalendarSidebar({
 
           {/* Filtro por Tipo de Recorrência */}
           <div>
-            <Collapsible defaultOpen>
-              <CollapsibleTrigger className="flex items-center justify-between w-full mb-2 group">
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  <RotateCcw className="w-4 h-4 text-gray-500" />
+            <Collapsible defaultOpen={false}>
+              <CollapsibleTrigger className="flex items-center justify-between w-full py-1 group">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <RotateCcw className="w-3.5 h-3.5" />
                   Recorrência
                 </div>
-                <ChevronDown className="w-4 h-4 text-gray-500 transition-transform group-data-[state=open]:rotate-180" />
+                <ChevronDown className="w-3.5 h-3.5 transition-transform group-data-[state=open]:rotate-180" />
               </CollapsibleTrigger>
               <CollapsibleContent>
-                <div className="space-y-1 pl-6">
+                  <div className="space-y-0.5 pl-4">
                   <div key="recurring-none-item" className="flex items-center space-x-2 group py-1">
                     <Checkbox 
                       id="recurring-none" 
@@ -350,7 +349,7 @@ export function TaskCalendarSidebar({
                     <div className="w-3 h-3 rounded-sm bg-gray-500" />
                     <label
                       htmlFor="recurring-none"
-                      className="text-sm leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 group-hover:text-blue-600 cursor-pointer"
+                      className="text-xs cursor-pointer"
                     >
                       Todas
                     </label>
@@ -366,7 +365,7 @@ export function TaskCalendarSidebar({
                       <div className="w-3 h-3 rounded-sm bg-purple-500" />
                       <label
                         htmlFor={`recurring-${type.value}`}
-                        className="text-sm leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 group-hover:text-blue-600 cursor-pointer"
+                        className="text-xs cursor-pointer"
                       >
                         {type.label}
                       </label>

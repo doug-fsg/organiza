@@ -1,16 +1,18 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { TRPCProvider } from "@/providers/trpc-provider";
 import { SessionProvider } from "@/providers/session-provider";
+import { ThemeProvider } from "@/providers/theme-provider";
 import { Toaster } from 'react-hot-toast';
 
 // Inicializar serviços do servidor (cron scheduler)
 import '@/lib/server-init';
 
-const geistSans = Geist({
+const inter = Inter({
   variable: "--font-geist-sans",
   subsets: ["latin"],
+  display: "swap",
 });
 
 const geistMono = Geist_Mono({
@@ -29,25 +31,34 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html suppressHydrationWarning>
+    <html lang="pt-BR" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${inter.variable} ${geistMono.variable} antialiased`}
       >
-        <SessionProvider>
-          <TRPCProvider>
-            {children}
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="dark"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <SessionProvider>
+            <TRPCProvider>
+              {children}
             <Toaster 
               position="top-right"
               toastOptions={{
                 duration: 3000,
+                className: '',
                 style: {
-                  background: '#363636',
-                  color: '#fff',
+                  background: 'hsl(var(--card))',
+                  color: 'hsl(var(--card-foreground))',
+                  border: '1px solid hsl(var(--border))',
                 },
               }}
             />
-          </TRPCProvider>
-        </SessionProvider>
+            </TRPCProvider>
+          </SessionProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

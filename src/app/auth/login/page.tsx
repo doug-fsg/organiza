@@ -129,8 +129,8 @@ export default function LoginPage() {
             </p>
             <div className="space-y-3 text-left pt-2">
               <div className="flex items-start gap-3">
-                <div className="rounded-full bg-green-500/10 p-1.5 mt-0.5">
-                  <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="rounded-full bg-success/10 p-1.5 mt-0.5">
+                  <svg className="w-4 h-4 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
                 </div>
@@ -140,8 +140,8 @@ export default function LoginPage() {
                 </div>
               </div>
               <div className="flex items-start gap-3">
-                <div className="rounded-full bg-blue-500/10 p-1.5 mt-0.5">
-                  <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="rounded-full bg-info/10 p-1.5 mt-0.5">
+                  <svg className="w-4 h-4 text-info" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
                 </div>
@@ -151,8 +151,8 @@ export default function LoginPage() {
                 </div>
               </div>
               <div className="flex items-start gap-3">
-                <div className="rounded-full bg-purple-500/10 p-1.5 mt-0.5">
-                  <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="rounded-full bg-primary/10 p-1.5 mt-0.5">
+                  <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
                 </div>
