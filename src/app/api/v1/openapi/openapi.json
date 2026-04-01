@@ -152,6 +152,43 @@
         "responses": { "200": { "description": "Projeto criado" }, "401": { "description": "Não autorizado" } }
       }
     },
+    "/accounts/{account_id}/projects/from-template": {
+      "post": {
+        "tags": ["Projects"],
+        "summary": "Criar projeto a partir de modelo (subtask template)",
+        "description": "Cria o projeto, subtarefas na ordem do modelo, dependências sequenciais e vínculos de departamento.",
+        "parameters": [{ "name": "account_id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["subtask_template_id", "title"],
+                "properties": {
+                  "subtask_template_id": { "type": "string", "description": "ID do modelo (SubtaskTemplate)" },
+                  "title": { "type": "string" },
+                  "description": { "type": "string" },
+                  "client_id": { "type": "string" },
+                  "department_ids": { "type": "array", "items": { "type": "string" } },
+                  "assigned_users": {
+                    "type": "object",
+                    "additionalProperties": { "type": "string" },
+                    "description": "Mapa índice da etapa (0,1,...) → userId"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Projeto criado com etapas" },
+          "400": { "description": "Corpo inválido ou modelo corrompido" },
+          "401": { "description": "Não autorizado" },
+          "404": { "description": "Modelo não encontrado" }
+        }
+      }
+    },
     "/accounts/{account_id}/projects/{project_id}": {
       "get": {
         "tags": ["Projects"],

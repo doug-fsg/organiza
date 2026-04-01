@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { createTRPCRouter, accountProcedure, protectedProcedure } from '@/server/api/trpc'
 import { TRPCError } from '@trpc/server'
 import { UserRole, Priority, MainTaskStatus } from '@prisma/client'
+import { createProjectFromSubtaskTemplate } from '@/lib/project-from-subtask-template'
 
 // Etapa do modelo de subtarefas
 const stageSchema = z.object({
@@ -225,77 +226,28 @@ export const subtaskTemplateRouter = createTRPCRouter({
         })
       }
 
-      const model = await ctx.prisma.subtaskTemplate.findUnique({
-        where: { id: input.subtaskTemplateId },
-      })
-      if (!model || model.accountId !== ctx.accountId) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Modelo não encontrado' })
-      }
-
-      const stages = JSON.parse(model.stagesData) as Array<{
-        title: string
-        description?: string
-        requiresApproval?: boolean
-        assignedToId?: string
-        departmentId?: string
-      }>
-
-      const mainTask = await ctx.prisma.mainTask.create({
-        data: {
-          title: input.projectTitle,
-          description: input.projectDescription,
-          priority: Priority.MEDIUM,
-          createdBy: ctx.userId!,
-          accountId: ctx.accountId,
-          subtaskTemplateId: model.id,
-        },
-      })
-
-      const resolveAssignedToId = (stage: { assignedToId?: string }, index: number): string | undefined => {
-        const fromStage = stage.assignedToId
-        if (typeof fromStage === 'string' && fromStage.trim() && fromStage !== '__none__') {
-          return fromStage.trim()
+      try {
+        const mainTask = await createProjectFromSubtaskTemplate(
+          ctx.prisma,
+          ctx.accountId,
+          ctx.userId!,
+          {
+            subtaskTemplateId: input.subtaskTemplateId,
+            projectTitle: input.projectTitle,
+            projectDescription: input.projectDescription,
+            departmentIds: input.departmentIds,
+            assignedUsers: input.assignedUsers as Record<string, string> | undefined,
+          }
+        )
+        if (!mainTask) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Modelo não encontrado' })
         }
-        return input.assignedUsers?.[index]
+        return mainTask
+      } catch (e) {
+        if (e instanceof TRPCError) throw e
+        const msg = e instanceof Error ? e.message : 'Erro ao criar projeto a partir do modelo'
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: msg })
       }
-
-      const createdSubtasks = await Promise.all(
-        stages.map(async (stage: any, index: number) =>
-          ctx.prisma.subtask.create({
-            data: {
-              title: stage.title,
-              description: stage.description,
-              requiresApproval: stage.requiresApproval ?? true,
-              priority: Priority.MEDIUM,
-              mainTaskId: mainTask.id,
-              assignedToId: resolveAssignedToId(stage, index),
-            },
-          })
-        )
-      )
-
-      for (let i = 1; i < createdSubtasks.length; i++) {
-        await ctx.prisma.subtaskDependency.create({
-          data: {
-            dependentId: createdSubtasks[i].id,
-            blockedById: createdSubtasks[i - 1].id,
-          },
-        })
-      }
-
-      const deptIdsFromStages = [...new Set(stages.map((s) => s.departmentId).filter(Boolean) as string[])]
-      const allDeptIds = [...new Set([...(input.departmentIds ?? []), ...deptIdsFromStages])]
-      if (allDeptIds.length) {
-        await Promise.all(
-          allDeptIds.map((departmentId) =>
-            ctx.prisma.departmentTask.create({
-              data: { departmentId, mainTaskId: mainTask.id },
-            })
-          )
-        )
-      }
-
-      return mainTask
     }),
 
   // Aplicar modelo em projeto existente (adiciona etapas)

@@ -140,7 +140,7 @@ npm run dev
 ```
 
 5. **Acesse a aplicação**:
-Abra [http://localhost:3000](http://localhost:3000) no seu navegador.
+Abra [http://localhost:3000](http://localhost:3000) no navegador (se configurou `PORT` no `.env`, use essa porta e alinhe `NEXTAUTH_URL` — veja [Variáveis de Ambiente](#variáveis-de-ambiente)).
 
 ## 👥 Usuários de Exemplo
 
@@ -273,7 +273,12 @@ Crie um arquivo `.env` na raiz do projeto:
 DATABASE_URL="postgresql://usuario:senha@localhost:5432/organiza"
 NEXTAUTH_SECRET="seu-secret-aqui"
 NEXTAUTH_URL="http://localhost:3000"
+
+# Opcional: porta do servidor Next.js (padrão 3000). O Next.js lê do .env em dev e start.
+PORT=3000
 ```
+
+Se definir outra porta (por exemplo `PORT=4000`), use **a mesma origem** em `NEXTAUTH_URL` (ex.: `http://localhost:4000`), senão login e links de e-mail podem apontar para a porta errada. Em hospedagens (Vercel, Railway, etc.), a porta costuma ser definida pela plataforma — não é necessário fixar `PORT` no `.env` local delas se o host já injeta a variável.
 
 ## 🎨 Personalização
 
