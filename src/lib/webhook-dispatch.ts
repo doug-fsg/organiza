@@ -8,6 +8,26 @@ export interface WebhookPayload {
   data: Record<string, unknown>
 }
 
+/** Contato CRM vinculado ao projeto (MainTask) para enriquecer webhooks de tarefa. */
+export function webhookClientFromMainTask(mainTask: {
+  clientId: string | null
+  client: { id: string; name: string; email: string | null } | null
+}): {
+  clientId: string | null
+  client: { id: string; name: string; email: string | null } | null
+} {
+  return {
+    clientId: mainTask.clientId,
+    client: mainTask.client
+      ? {
+          id: mainTask.client.id,
+          name: mainTask.client.name,
+          email: mainTask.client.email,
+        }
+      : null,
+  }
+}
+
 /**
  * Dispara webhooks para uma conta que está inscrita no evento.
  * Executa em background (fire-and-forget) para não bloquear a requisição.

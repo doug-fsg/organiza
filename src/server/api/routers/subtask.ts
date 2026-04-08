@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { createTRPCRouter, publicProcedure, accountProcedure } from '@/server/api/trpc'
 import { SubtaskStatus, Priority, MainTaskStatus, UserRole, RecurringType, WeekDay } from '@prisma/client'
 import { DependencyService } from '@/lib/dependency-service'
-import { dispatchWebhooks } from '@/lib/webhook-dispatch'
+import { dispatchWebhooks, webhookClientFromMainTask } from '@/lib/webhook-dispatch'
 
 export const subtaskRouter = createTRPCRouter({
   // Criar subtarefa
@@ -69,7 +69,11 @@ export const subtaskRouter = createTRPCRouter({
         },
         include: {
           assignedTo: true,
-          mainTask: true,
+          mainTask: {
+            include: {
+              client: { select: { id: true, name: true, email: true } },
+            },
+          },
         },
       })
 
@@ -108,6 +112,7 @@ export const subtaskRouter = createTRPCRouter({
         assignedToId: subtask.assignedToId,
         assignedTo: subtask.assignedTo ? { id: subtask.assignedTo.id, name: subtask.assignedTo.name } : null,
         createdAt: subtask.createdAt.toISOString(),
+        ...webhookClientFromMainTask(subtask.mainTask),
       })
 
       return subtask
@@ -333,6 +338,7 @@ export const subtaskRouter = createTRPCRouter({
             include: {
               subtasks: true,
               creator: true,
+              client: { select: { id: true, name: true, email: true } },
             },
           },
           dependencies: {
@@ -388,6 +394,7 @@ export const subtaskRouter = createTRPCRouter({
             newStatus: data.status,
             assignedTo: updatedSubtask.assignedTo ? { id: updatedSubtask.assignedTo.id, name: updatedSubtask.assignedTo.name } : null,
             updatedAt: updatedSubtask.updatedAt.toISOString(),
+            ...webhookClientFromMainTask(updatedSubtask.mainTask),
           })
         }
       }
@@ -607,10 +614,11 @@ export const subtaskRouter = createTRPCRouter({
             assignedTo: true,
             mainTask: {
               include: {
-                creator: true
-              }
-            }
-          }
+                creator: true,
+                client: { select: { id: true, name: true, email: true } },
+              },
+            },
+          },
         })
 
         if (subtask) {
@@ -629,6 +637,7 @@ export const subtaskRouter = createTRPCRouter({
             title: subtask.title,
             status: result.newStatus,
             assignedTo: subtask.assignedTo ? { id: subtask.assignedTo.id, name: subtask.assignedTo.name } : null,
+            ...webhookClientFromMainTask(subtask.mainTask),
           })
         }
       }
@@ -636,7 +645,14 @@ export const subtaskRouter = createTRPCRouter({
       if (result.newStatus === SubtaskStatus.BLOCKED) {
         const subtask = await ctx.prisma.subtask.findUnique({
           where: { id: input.id },
-          include: { mainTask: true, assignedTo: true },
+          include: {
+            assignedTo: true,
+            mainTask: {
+              include: {
+                client: { select: { id: true, name: true, email: true } },
+              },
+            },
+          },
         })
         if (subtask) {
           void dispatchWebhooks(subtask.mainTask.accountId, 'task.blocked', {
@@ -646,6 +662,7 @@ export const subtaskRouter = createTRPCRouter({
             status: result.newStatus,
             assignedTo: subtask.assignedTo ? { id: subtask.assignedTo.id, name: subtask.assignedTo.name } : null,
             pendingDependencies: result.pendingDependencies,
+            ...webhookClientFromMainTask(subtask.mainTask),
           })
         }
       }
@@ -694,7 +711,14 @@ export const subtaskRouter = createTRPCRouter({
       // Notificar responsável sobre aprovação
       const subtask = await ctx.prisma.subtask.findUnique({
         where: { id: input.id },
-        include: { assignedTo: true, mainTask: true }
+        include: {
+          assignedTo: true,
+          mainTask: {
+            include: {
+              client: { select: { id: true, name: true, email: true } },
+            },
+          },
+        },
       })
 
       if (subtask?.assignedTo) {
@@ -750,6 +774,7 @@ export const subtaskRouter = createTRPCRouter({
           title: subtask.title,
           status: 'APPROVED',
           assignedTo: subtask.assignedTo ? { id: subtask.assignedTo.id, name: subtask.assignedTo.name } : null,
+          ...webhookClientFromMainTask(subtask.mainTask),
         })
       }
 
@@ -757,7 +782,14 @@ export const subtaskRouter = createTRPCRouter({
         for (const unblockedId of result.unblockedSubtasks) {
           const unblockedSubtask = await ctx.prisma.subtask.findUnique({
             where: { id: unblockedId },
-            include: { assignedTo: true, mainTask: true },
+            include: {
+              assignedTo: true,
+              mainTask: {
+                include: {
+                  client: { select: { id: true, name: true, email: true } },
+                },
+              },
+            },
           })
           if (unblockedSubtask?.mainTask) {
             void dispatchWebhooks(unblockedSubtask.mainTask.accountId, 'task.unblocked', {
@@ -766,6 +798,7 @@ export const subtaskRouter = createTRPCRouter({
               title: unblockedSubtask.title,
               status: unblockedSubtask.status,
               assignedTo: unblockedSubtask.assignedTo ? { id: unblockedSubtask.assignedTo.id, name: unblockedSubtask.assignedTo.name } : null,
+              ...webhookClientFromMainTask(unblockedSubtask.mainTask),
             })
           }
         }
@@ -791,7 +824,14 @@ export const subtaskRouter = createTRPCRouter({
       // Notificar responsável sobre reprovação
       const subtask = await ctx.prisma.subtask.findUnique({
         where: { id: input.id },
-        include: { assignedTo: true, mainTask: true }
+        include: {
+          assignedTo: true,
+          mainTask: {
+            include: {
+              client: { select: { id: true, name: true, email: true } },
+            },
+          },
+        },
       })
 
       if (subtask?.assignedTo) {
@@ -813,6 +853,7 @@ export const subtaskRouter = createTRPCRouter({
           status: 'REJECTED',
           rejectionReason: input.reason,
           assignedTo: subtask.assignedTo ? { id: subtask.assignedTo.id, name: subtask.assignedTo.name } : null,
+          ...webhookClientFromMainTask(subtask.mainTask),
         })
       }
 
@@ -843,10 +884,15 @@ export const subtaskRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const subtask = await ctx.prisma.subtask.findUnique({
         where: { id: input.id },
-        include: { 
+        include: {
           assignedTo: true,
-          mainTask: { include: { creator: true } }
-        }
+          mainTask: {
+            include: {
+              creator: true,
+              client: { select: { id: true, name: true, email: true } },
+            },
+          },
+        },
       })
 
       if (!subtask) {
@@ -908,6 +954,7 @@ export const subtaskRouter = createTRPCRouter({
         title: subtask.title,
         previousAssignee: subtask.assignedTo ? { id: subtask.assignedTo.id, name: subtask.assignedTo.name } : null,
         newAssignee: updatedSubtask.assignedTo ? { id: updatedSubtask.assignedTo.id, name: updatedSubtask.assignedTo.name } : null,
+        ...webhookClientFromMainTask(subtask.mainTask),
       })
 
       return updatedSubtask

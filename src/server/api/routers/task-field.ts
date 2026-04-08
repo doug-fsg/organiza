@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { createTRPCRouter, accountProcedure, publicProcedure } from '@/server/api/trpc'
 import { CustomAttributeType, SubtaskStatus, MainTaskStatus } from '@prisma/client'
-import { dispatchWebhooks } from '@/lib/webhook-dispatch'
+import { dispatchWebhooks, webhookClientFromMainTask } from '@/lib/webhook-dispatch'
 
 export const taskFieldRouter = createTRPCRouter({
   // Criar um novo botão ou campo
@@ -187,9 +187,12 @@ export const taskFieldRouter = createTRPCRouter({
                 include: {
                   assignedTo: true,
                   mainTask: {
-                    include: { subtasks: true }
-                  }
-                }
+                    include: {
+                      subtasks: true,
+                      client: { select: { id: true, name: true, email: true } },
+                    },
+                  },
+                },
               })
 
               const accountId = updatedSubtask.mainTask.accountId
@@ -214,7 +217,8 @@ export const taskFieldRouter = createTRPCRouter({
                     type: 'SMART_BUTTON',
                     buttonId: button.id,
                     buttonName: button.name
-                  }
+                  },
+                  ...webhookClientFromMainTask(updatedSubtask.mainTask),
                 })
               }
 
@@ -277,7 +281,8 @@ export const taskFieldRouter = createTRPCRouter({
                       type: 'SMART_BUTTON',
                       buttonId: button.id,
                       buttonName: button.name
-                    }
+                    },
+                    ...webhookClientFromMainTask(updatedSubtask.mainTask),
                   })
                 }
               }
@@ -291,7 +296,10 @@ export const taskFieldRouter = createTRPCRouter({
                 status: MainTaskStatus.COMPLETED, 
                 completedAt: new Date() 
               },
-              include: { creator: true }
+              include: {
+                creator: true,
+                client: { select: { id: true, name: true, email: true } },
+              },
             })
 
             await ctx.prisma.subtask.updateMany({
@@ -317,7 +325,8 @@ export const taskFieldRouter = createTRPCRouter({
                 type: 'SMART_BUTTON',
                 buttonId: button.id,
                 buttonName: button.name
-              }
+              },
+              ...webhookClientFromMainTask(updatedMainTask),
             })
           }
 

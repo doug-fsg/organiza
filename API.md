@@ -46,8 +46,8 @@ O `account_id` está em **Meu Perfil** (menu do usuário).
 - `DELETE /api/v1/accounts/{account_id}/projects/{project_id}` — Excluir projeto
 
 ### Subtarefas
-- `GET /api/v1/accounts/{account_id}/projects/{project_id}/subtasks` — Listar subtarefas
-- `POST /api/v1/accounts/{account_id}/projects/{project_id}/subtasks` — Criar subtarefa
+- `GET /api/v1/accounts/{account_id}/projects/{project_id}/subtasks` — Listar subtarefas (cada item inclui `client_id` e `client` do projeto, quando houver contato vinculado)
+- `POST /api/v1/accounts/{account_id}/projects/{project_id}/subtasks` — Criar subtarefa (resposta inclui `client_id` e `client` do projeto quando houver)
 
 ### Clientes
 - `GET /api/v1/accounts/{account_id}/clients` — Listar clientes
@@ -153,7 +153,9 @@ Configure webhooks em **Meu Perfil** → Integrações para receber notificaçõ
 }
 ```
 
-**Eventos disponíveis:** `task.created`, `task.started`, `task.blocked`, `task.unblocked`, `task.completed`, `task.approved`, `task.rejected`, `task.reassigned`, `project.created`, `project.updated`, `project.deleted`, `client.created`, `client.updated`, `service_payment.created`, `service_payment.approved`, `service_payment.rejected`, `service_payment.paid`, `comment.added`.
+Nos eventos de **tarefa** (`task.created`, `task.started`, `task.blocked`, `task.unblocked`, `task.completed`, `task.approved`, `task.rejected`, `task.reassigned`, `task.full_completed`), o objeto `data` inclui `clientId` e `client` (`id`, `name`, `email`) do contato vinculado ao **projeto** da tarefa, ou `clientId: null` e `client: null` se não houver vínculo.
+
+**Eventos disponíveis:** `task.created`, `task.started`, `task.blocked`, `task.unblocked`, `task.completed`, `task.approved`, `task.rejected`, `task.reassigned`, `task.full_completed`, `project.created`, `project.updated`, `project.deleted`, `client.created`, `client.updated`, `service_payment.created`, `service_payment.approved`, `service_payment.rejected`, `service_payment.paid`, `comment.added`.
 
 Se configurar um secret, o header `X-Webhook-Signature` conterá assinatura HMAC-SHA256 do body para validar a origem.
 
