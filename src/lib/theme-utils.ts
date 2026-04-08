@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
+import { UserRole } from "@prisma/client"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -16,6 +17,38 @@ export function getPriorityClasses(priority: string): string {
     LOW: 'bg-priority-low text-priority-low-foreground',
   }
   return priorities[priority] || priorities.MEDIUM
+}
+
+const ROLE_BADGE_SOFT: Record<UserRole, string> = {
+  OWNER:
+    "border border-teal/25 bg-teal/15 text-teal dark:border-teal/30 dark:bg-teal/20 dark:text-teal-foreground",
+  ADMIN:
+    "border border-indigo/25 bg-indigo/15 text-indigo dark:border-indigo/30 dark:bg-indigo/20 dark:text-indigo-foreground",
+  MANAGER:
+    "border border-primary/25 bg-primary/15 text-primary dark:border-primary/30 dark:bg-primary/20 dark:text-primary-foreground",
+  MEMBER: "border border-border bg-muted text-muted-foreground",
+  SUPPLIER:
+    "border border-coral/25 bg-coral/15 text-coral dark:border-coral/30 dark:bg-coral/20 dark:text-coral-foreground",
+  FINANCIAL:
+    "border border-amber/25 bg-amber/15 text-amber dark:border-amber/30 dark:bg-amber/20 dark:text-amber-foreground",
+}
+
+const ROLE_BADGE_SOLID: Record<UserRole, string> = {
+  OWNER: "border-transparent bg-teal text-teal-foreground",
+  ADMIN: "border-transparent bg-indigo text-indigo-foreground",
+  MANAGER: "border-transparent bg-primary text-primary-foreground",
+  MEMBER: "border-transparent bg-secondary text-secondary-foreground",
+  SUPPLIER: "border-transparent bg-coral text-coral-foreground",
+  FINANCIAL: "border-transparent bg-amber text-amber-foreground",
+}
+
+/**
+ * Cores de papel (papéis de usuário) alinhadas aos tokens do tema — evite duplicar mapas por componente.
+ */
+export function getRoleBadgeClasses(role: UserRole, tone: "soft" | "solid" = "soft"): string {
+  return tone === "solid"
+    ? (ROLE_BADGE_SOLID[role] ?? "bg-muted text-muted-foreground")
+    : (ROLE_BADGE_SOFT[role] ?? "border border-border bg-muted text-muted-foreground")
 }
 
 /**

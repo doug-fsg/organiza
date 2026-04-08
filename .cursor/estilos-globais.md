@@ -34,6 +34,17 @@ Classes utilitárias definidas em `src/app/globals.css` para consistência visua
 | `state-message` | Texto "Carregando...", vazio, etc. (text-sm muted) |
 | `state-message-sm` | Versão menor (text-xs) |
 
+## Tipografia (hierarquia de página)
+
+| Classe | Uso |
+|--------|-----|
+| `page-title` | Título principal da view (`text-3xl`, bold, `tracking-tight`, `leading-tight`) |
+| `page-description` | Subtítulo / resumo abaixo do título (`text-sm`, muted, `leading-relaxed`, `max-w-prose`) |
+| `section-title` | Título de seção (`text-xl`, bold, tight tracking) |
+| `prose-readable` | Bloco de leitura confortável (`max-w-prose`, `leading-relaxed`) |
+
+Fontes: `layout.tsx` define **`--font-inter`** (sans) e **`--font-geist-mono`** (mono); em `globals.css`, `--font-sans` / `--font-mono` do tema apontam para essas variáveis com fallbacks de sistema.
+
 ## Componente LoadingSpinner
 
 Usar `<LoadingSpinner size="md" text="Carregando..." />` para páginas. O componente já utiliza as classes globais internamente.

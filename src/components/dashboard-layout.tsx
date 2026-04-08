@@ -87,7 +87,10 @@ export function DashboardLayout({ user, onLogout, pathname, children }: Dashboar
             <SidebarTrigger className="-ml-1" />
             <div className="h-4 w-px bg-sidebar-border" />
             <div className="flex items-center space-x-2">
-              <Link href="/" className="text-lg font-semibold hover:opacity-80 transition-opacity">
+              <Link
+                href="/"
+                className="text-lg font-semibold tracking-tight leading-none hover:opacity-80 transition-opacity"
+              >
                 Organiza
               </Link>
             </div>

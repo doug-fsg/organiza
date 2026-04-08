@@ -587,7 +587,7 @@ export function SubtaskDetailsModal({
                                   por {rejectionData.rejectorName}
                                 </p>
                                 <div className="bg-white rounded p-2 border border-red-200">
-                                  <p className="text-sm text-gray-800">{rejectionData.reason}</p>
+                                  <p className="text-sm text-foreground leading-relaxed">{rejectionData.reason}</p>
                                 </div>
                               </div>
                             </div>

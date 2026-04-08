@@ -453,7 +453,7 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
         case SubtaskStatus.APPROVED:
           return 'mb-4 hover:shadow-md transition-shadow border-l-4 border-green-500 bg-green-50/20'
         default:
-          return `mb-4 hover:shadow-md transition-shadow ${hasUnreadComments ? 'bg-purple-50/20' : ''}`
+          return `mb-4 hover:shadow-md transition-shadow ${hasUnreadComments ? 'bg-sky/10 dark:bg-sky/15' : ''}`
       }
     }
     
@@ -468,7 +468,7 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1 min-w-0">
               <h4 className="font-medium text-sm leading-tight">{subtask.title}</h4>
-              <p className="text-xs text-gray-500 mt-0.5 truncate">📋 {subtask.mainTaskTitle}</p>
+              <p className="text-xs text-muted-foreground mt-0.5 truncate leading-snug">📋 {subtask.mainTaskTitle}</p>
             </div>
             <div className="flex items-center space-x-1.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
               {subtask.status === SubtaskStatus.BLOCKED && (
@@ -488,11 +488,11 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
 
           {/* Description */}
           {subtask.description && (
-              <p className="text-xs text-gray-600 line-clamp-2">{subtask.description}</p>
+              <p className="text-xs text-muted-foreground line-clamp-2 max-w-prose leading-relaxed">{subtask.description}</p>
           )}
 
           {/* Meta informações compactas */}
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
             <div className="flex items-center space-x-1">
               <User className="h-3.5 w-3.5 flex-shrink-0" />
               <span className="truncate">{subtask.assignedTo?.name || 'Não atribuído'}</span>
@@ -530,7 +530,7 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
                       e.stopPropagation()
                       handleViewDetails(subtask, 'checklist')
                     }}
-                    className="flex items-center gap-1 text-blue-600 hover:text-blue-700 hover:underline transition-colors"
+                    className="flex items-center gap-1 text-primary hover:text-primary/90 hover:underline transition-colors"
                   >
                     <CheckCircle2 className="h-3.5 w-3.5" />
                     <span>{JSON.parse(subtask.checklistItems || '[]').filter((item: any) => item.checked).length}/{JSON.parse(subtask.checklistItems || '[]').length}</span>
@@ -544,14 +544,14 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
                     }}
                     className={`flex items-center gap-1 transition-all hover:underline ${
                       hasUnreadComments 
-                        ? 'text-purple-600 font-semibold hover:text-purple-700' 
-                        : 'text-gray-600 hover:text-gray-700'
+                        ? 'text-sky font-semibold hover:opacity-90' 
+                        : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >
-                    <MessageSquare className={`h-3.5 w-3.5 ${hasUnreadComments ? 'fill-purple-600' : ''}`} />
+                    <MessageSquare className={`h-3.5 w-3.5 ${hasUnreadComments ? 'fill-sky' : ''}`} />
                     <span>{subtask.comments.length}</span>
                     {hasUnreadComments && (
-                      <Badge variant="default" className="ml-0.5 bg-purple-600 text-white text-xs px-1 py-0 h-4 animate-pulse">
+                      <Badge variant="default" className="ml-0.5 border-transparent bg-sky text-sky-foreground text-xs px-1 py-0 h-4 animate-pulse">
                         {unreadComments}
                       </Badge>
                     )}
@@ -663,11 +663,11 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
       {/* Header Compacto */}
       <div className="flex items-center justify-between pb-2 border-b">
         <div>
-          <h2 className="text-xl font-bold">Central de Tarefas</h2>
+          <h2 className="section-title">Central de Tarefas</h2>
         </div>
         {/* Filtros - Inline com header */}
         <div className="flex items-center gap-2">
-          <Filter className="h-3.5 w-3.5 text-gray-500" />
+          <Filter className="h-3.5 w-3.5 text-muted-foreground" />
           {/* Filtro de Usuário */}
           <Select value={userFilter} onValueChange={(value: any) => {
             setUserFilter(value)
@@ -707,7 +707,7 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
                 className="w-[130px] h-8 text-xs"
                 placeholder="Data Inicial"
               />
-              <span className="text-xs text-gray-500">até</span>
+              <span className="text-xs text-muted-foreground">até</span>
               <Input
                 type="date"
                 value={customDateEnd}
@@ -726,7 +726,7 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
           className={`border shadow-sm cursor-pointer transition-all ${
             activeFilter === 'pending' 
               ? 'border-2 border-blue-500 bg-blue-50' 
-              : 'border-gray-200 hover:border-gray-300'
+              : 'border-border hover:border-muted-foreground/25'
           }`}
           onClick={() => {
             setActiveFilter('pending')
@@ -739,7 +739,7 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
                 <Clock className="h-3 w-3 text-warning-foreground" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-base font-semibold leading-tight">{pendingSubtasks.length}</p>
+                <p className="text-base font-semibold leading-tight tabular-nums">{pendingSubtasks.length}</p>
                 <p className="text-xs text-muted-foreground leading-tight truncate">Aguardando</p>
               </div>
             </div>
@@ -750,7 +750,7 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
           className={`border shadow-sm cursor-pointer transition-all ${
             activeFilter === 'blocked' 
               ? 'border-2 border-blue-500 bg-blue-50' 
-              : 'border-gray-200 hover:border-gray-300'
+              : 'border-border hover:border-muted-foreground/25'
           }`}
           onClick={() => {
             setActiveFilter('blocked')
@@ -763,7 +763,7 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
                 <AlertTriangle className="h-3 w-3 text-red-600" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-base font-semibold leading-tight">{blockedSubtasks.length}</p>
+                <p className="text-base font-semibold leading-tight tabular-nums">{blockedSubtasks.length}</p>
                 <p className="text-xs text-muted-foreground leading-tight truncate">Bloqueadas</p>
               </div>
             </div>
@@ -774,7 +774,7 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
           className={`border shadow-sm cursor-pointer transition-all ${
             activeFilter === 'approved' 
               ? 'border-2 border-blue-500 bg-blue-50' 
-              : 'border-gray-200 hover:border-gray-300'
+              : 'border-border hover:border-muted-foreground/25'
           }`}
           onClick={() => {
             setActiveFilter('approved')
@@ -787,7 +787,7 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
                 <CheckCircle2 className="h-3 w-3 text-green-600" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-base font-semibold leading-tight">{approvedSubtasks.length}</p>
+                <p className="text-base font-semibold leading-tight tabular-nums">{approvedSubtasks.length}</p>
                 <p className="text-xs text-muted-foreground leading-tight truncate">Aprovadas</p>
               </div>
             </div>
@@ -798,7 +798,7 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
           className={`border shadow-sm cursor-pointer transition-all ${
             activeFilter === 'all' 
               ? 'border-2 border-blue-500 bg-blue-50' 
-              : 'border-gray-200 hover:border-gray-300'
+              : 'border-border hover:border-muted-foreground/25'
           }`}
           onClick={() => {
             setActiveFilter('all')
@@ -807,11 +807,11 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
         >
           <CardContent className="flex items-center py-2 px-3">
             <div className="flex items-center space-x-1.5 w-full">
-              <div className="w-5 h-5 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <Filter className="h-3 w-3 text-gray-600" />
+              <div className="w-5 h-5 bg-muted rounded-full flex items-center justify-center flex-shrink-0">
+                <Filter className="h-3 w-3 text-muted-foreground" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-base font-semibold leading-tight">{allSubtasks.length}</p>
+                <p className="text-base font-semibold leading-tight tabular-nums">{allSubtasks.length}</p>
                 <p className="text-xs text-muted-foreground leading-tight truncate">Todas</p>
               </div>
             </div>
@@ -824,10 +824,10 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
         <Card>
           <CardContent className="text-center py-8">
             <CheckCircle2 className="h-12 w-12 text-green-600 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
+            <h3 className="text-lg font-medium text-foreground mb-2 tracking-tight leading-snug">
               {getEmptyMessage().title}
             </h3>
-            <p className="text-gray-600">
+            <p className="text-muted-foreground max-w-prose mx-auto leading-relaxed text-sm">
               {getEmptyMessage().description}
             </p>
           </CardContent>
@@ -857,7 +857,7 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
                 >
                   Anterior
                 </Button>
-                <span className="text-sm text-gray-600">
+                <span className="text-sm text-muted-foreground tabular-nums">
                   Página {currentPage} de {totalPages}
                 </span>
                 <Button
@@ -870,7 +870,7 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
                   Próxima
                 </Button>
               </div>
-              <div className="text-sm text-gray-500">
+              <div className="text-sm text-muted-foreground tabular-nums">
                 Mostrando {startIndex + 1}-{Math.min(endIndex, sortedSubtasks.length)} de {sortedSubtasks.length} tarefas
               </div>
             </div>
@@ -939,28 +939,28 @@ export function TasksCentralPanel({ currentUser }: TasksCentralPanelProps) {
           <div className="space-y-2">
             {history && history.length > 0 ? (
               history.map((log: any) => (
-                <div key={log.id} className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">
+                <div key={log.id} className="flex items-start space-x-3 p-3 bg-muted/50 rounded-lg">
                   <Avatar className="h-8 w-8">
                     <AvatarFallback className="text-xs">
                       {log.user.name.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900">
+                    <p className="text-sm font-medium text-foreground">
                       {log.user.name}
                     </p>
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-muted-foreground">
                       {log.description}
                     </p>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       {new Date(log.createdAt).toLocaleString('pt-BR')}
                     </p>
                   </div>
                 </div>
               ))
             ) : (
-              <div className="text-center py-8 text-gray-500">
-                <History className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+              <div className="text-center py-8 text-muted-foreground">
+                <History className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
                 <p>Nenhum histórico disponível</p>
               </div>
             )}

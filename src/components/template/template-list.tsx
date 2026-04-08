@@ -32,20 +32,28 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { api } from '@/lib/api'
 import { SubtaskModelEditForm } from './template-form'
 import toast from 'react-hot-toast'
-import { MoreHorizontal, Trash2, Play, Layers, Eye, Pencil } from 'lucide-react'
+import { MoreHorizontal, Trash2, Play, Layers, Eye, Pencil, Loader2, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
 interface SubtaskModelListProps {
-  onUseModel?: (modelId: string, projectTitle?: string) => void
+  /** Retorno em Promise permite manter o dialog aberto até o projeto ser criado (evita duplo clique). */
+  onUseModel?: (modelId: string, projectTitle?: string) => void | Promise<void>
   /** Quando true, abre dialog para título antes de criar projeto */
   promptProjectTitle?: boolean
   /** Indica que está criando projeto a partir do modelo (loading) */
   isCreating?: boolean
+  /** Empty state: abre o mesmo fluxo que "Novo modelo" na página */
+  onRequestNewModel?: () => void
 }
 
-export function SubtaskModelList({ onUseModel, promptProjectTitle = true, isCreating = false }: SubtaskModelListProps) {
+export function SubtaskModelList({
+  onUseModel,
+  promptProjectTitle = true,
+  isCreating = false,
+  onRequestNewModel,
+}: SubtaskModelListProps) {
   const [deleteDialog, setDeleteDialog] = useState<{ isOpen: boolean; id?: string }>({
     isOpen: false,
   })
@@ -59,8 +67,13 @@ export function SubtaskModelList({ onUseModel, promptProjectTitle = true, isCrea
     isOpen: boolean
     modelId?: string
     modelName?: string
+    modelDescription?: string | null
     projectTitle: string
   }>({ isOpen: false, projectTitle: '' })
+
+  const resetUseModelDialog = () => {
+    setUseModelDialog({ isOpen: false, projectTitle: '' })
+  }
 
   const { data: models, isLoading } = api.subtaskTemplate.getAll.useQuery()
   const { data: users } = api.user.getAll.useQuery(undefined, { enabled: viewDialog.isOpen || editDialog.isOpen })
@@ -99,25 +112,30 @@ export function SubtaskModelList({ onUseModel, promptProjectTitle = true, isCrea
     },
   })
 
-  const handleUseClick = (modelId: string, modelName: string) => {
+  const handleUseClick = (modelId: string, modelName: string, modelDescription?: string | null) => {
     if (promptProjectTitle && onUseModel) {
       setUseModelDialog({
         isOpen: true,
         modelId,
         modelName,
+        modelDescription: modelDescription ?? null,
         projectTitle: modelName,
       })
     } else if (onUseModel) {
-      onUseModel(modelId)
+      void onUseModel(modelId)
     }
   }
 
-  const handleConfirmUse = () => {
-    if (useModelDialog.modelId && useModelDialog.projectTitle.trim() && onUseModel) {
-      onUseModel(useModelDialog.modelId, useModelDialog.projectTitle.trim())
-      setUseModelDialog({ isOpen: false, projectTitle: '' })
-    } else {
+  const handleConfirmUse = async () => {
+    if (!(useModelDialog.modelId && useModelDialog.projectTitle.trim() && onUseModel)) {
       toast.error('Informe o título do projeto')
+      return
+    }
+    try {
+      await onUseModel(useModelDialog.modelId, useModelDialog.projectTitle.trim())
+      resetUseModelDialog()
+    } catch {
+      /* toast via mutation onError */
     }
   }
 
@@ -132,12 +150,19 @@ export function SubtaskModelList({ onUseModel, promptProjectTitle = true, isCrea
   if (!models || models.length === 0) {
     return (
       <Card>
-        <CardContent className="flex flex-col items-center justify-center h-96">
-          <Layers className="h-16 w-16 text-muted-foreground mb-4" />
-          <p className="text-muted-foreground mb-4">Nenhum modelo de tarefas</p>
-          <p className="text-sm text-muted-foreground text-center">
-            Crie modelos para reutilizar etapas em projetos novos ou existentes
+        <CardContent className="flex flex-col items-center justify-center h-96 gap-4">
+          <Layers className="h-16 w-16 text-muted-foreground" />
+          <p className="text-muted-foreground text-center">Nenhum modelo de tarefas</p>
+          <p className="text-sm text-muted-foreground text-center max-w-sm">
+            Crie modelos para reutilizar etapas em projetos novos ou existentes. No formulário, use &quot;Usar
+            exemplo&quot; para começar rápido.
           </p>
+          {onRequestNewModel && (
+            <Button type="button" onClick={onRequestNewModel} className="gap-2">
+              <Plus className="h-4 w-4" />
+              Criar primeiro modelo
+            </Button>
+          )}
         </CardContent>
       </Card>
     )
@@ -184,7 +209,10 @@ export function SubtaskModelList({ onUseModel, promptProjectTitle = true, isCrea
                       Editar
                     </DropdownMenuItem>
                     {onUseModel && (
-                      <DropdownMenuItem onClick={() => handleUseClick(model.id, model.name)}>
+                      <DropdownMenuItem
+                        disabled={isCreating}
+                        onClick={() => handleUseClick(model.id, model.name, model.description)}
+                      >
                         <Play className="h-4 w-4 mr-2" />
                         Novo projeto
                       </DropdownMenuItem>
@@ -218,7 +246,8 @@ export function SubtaskModelList({ onUseModel, promptProjectTitle = true, isCrea
                   <Button
                     size="sm"
                     className="w-full justify-center gap-2 whitespace-nowrap"
-                    onClick={() => handleUseClick(model.id, model.name)}
+                    disabled={isCreating}
+                    onClick={() => handleUseClick(model.id, model.name, model.description)}
                   >
                     <Play className="h-4 w-4 shrink-0" />
                     Novo projeto
@@ -278,29 +307,52 @@ export function SubtaskModelList({ onUseModel, promptProjectTitle = true, isCrea
 
       <Dialog
         open={useModelDialog.isOpen}
-        onOpenChange={(open) => !open && setUseModelDialog({ isOpen: false, projectTitle: '' })}
+        onOpenChange={(open) => {
+          if (open) return
+          if (isCreating) return
+          resetUseModelDialog()
+        }}
       >
-        <DialogContent>
+        <DialogContent
+          onPointerDownOutside={(e) => isCreating && e.preventDefault()}
+          onEscapeKeyDown={(e) => isCreating && e.preventDefault()}
+          aria-busy={isCreating}
+        >
           <DialogHeader>
             <DialogTitle>Novo projeto</DialogTitle>
             <DialogDescription>
-              Informe o título do projeto. As etapas do modelo "{useModelDialog.modelName}" serão aplicadas em sequência.
+              Informe o título do projeto. As etapas do modelo &quot;{useModelDialog.modelName}&quot; serão aplicadas
+              em sequência.
             </DialogDescription>
+            {useModelDialog.modelDescription?.trim() && (
+              <p className="text-xs text-muted-foreground border-l-2 border-muted pl-2 py-1 bg-muted/30 rounded-r-md">
+                {useModelDialog.modelDescription.trim()}
+              </p>
+            )}
           </DialogHeader>
           <div className="space-y-2">
-            <Label>Título do projeto</Label>
+            <Label htmlFor="project-title-new">Título do projeto</Label>
             <Input
+              id="project-title-new"
               value={useModelDialog.projectTitle}
               onChange={(e) => setUseModelDialog((p) => ({ ...p, projectTitle: e.target.value }))}
               placeholder="Ex: Venda Imóvel - Cliente João"
+              disabled={isCreating}
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setUseModelDialog({ isOpen: false, projectTitle: '' })} disabled={isCreating}>
+            <Button variant="outline" type="button" onClick={() => resetUseModelDialog()} disabled={isCreating}>
               Cancelar
             </Button>
-            <Button onClick={handleConfirmUse} disabled={isCreating}>
-              {isCreating ? 'Criando...' : 'Criar projeto'}
+            <Button type="button" onClick={() => void handleConfirmUse()} disabled={isCreating}>
+              {isCreating ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Criando...
+                </>
+              ) : (
+                'Criar projeto'
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

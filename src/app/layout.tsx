@@ -10,7 +10,7 @@ import { Toaster } from 'react-hot-toast';
 import '@/lib/server-init';
 
 const inter = Inter({
-  variable: "--font-geist-sans",
+  variable: "--font-inter",
   subsets: ["latin"],
   display: "swap",
 });

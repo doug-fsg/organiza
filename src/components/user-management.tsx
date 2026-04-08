@@ -20,6 +20,7 @@ import {
 import { UserDepartmentsSelect } from './user-management/user-departments-select'
 import { api } from '@/lib/api'
 import toast from 'react-hot-toast'
+import { getRoleBadgeClasses } from '@/lib/theme-utils'
 
 interface UserManagementProps {
   currentUserId: string
@@ -84,25 +85,6 @@ export function UserManagement({ currentUserId }: UserManagementProps) {
     })
   }
 
-  const getRoleBadge = (role: UserRole) => {
-    switch (role) {
-      case UserRole.OWNER:
-        return <Badge variant="default" className="bg-purple-600">Proprietário</Badge>
-      case UserRole.ADMIN:
-        return <Badge variant="default" className="bg-blue-600">Administrador</Badge>
-      case UserRole.MANAGER:
-        return <Badge variant="default" className="bg-green-600">Gerente</Badge>
-      case UserRole.MEMBER:
-        return <Badge variant="secondary">Membro</Badge>
-      case UserRole.SUPPLIER:
-        return <Badge variant="default" className="bg-orange-600">Fornecedor</Badge>
-      case UserRole.FINANCIAL:
-        return <Badge variant="default" className="bg-emerald-600">Financeiro</Badge>
-      default:
-        return <Badge variant="outline">{role}</Badge>
-    }
-  }
-
   const getRoleLabel = (role: UserRole) => {
     switch (role) {
       case UserRole.OWNER:
@@ -122,12 +104,22 @@ export function UserManagement({ currentUserId }: UserManagementProps) {
     }
   }
 
+  const getRoleBadge = (role: UserRole) => {
+    return (
+      <Badge variant="outline" className={getRoleBadgeClasses(role, 'solid')}>
+        {getRoleLabel(role)}
+      </Badge>
+    )
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold">Gerenciamento de Usuários</h2>
+          <h2 className="text-2xl font-bold tracking-tight leading-tight text-foreground">
+            Gerenciamento de Usuários
+          </h2>
           <p className="text-sm text-muted-foreground">
             Gerencie os membros da sua equipe
           </p>

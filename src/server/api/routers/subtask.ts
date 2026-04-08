@@ -203,6 +203,18 @@ export const subtaskRouter = createTRPCRouter({
             include: {
               creator: true,
               client: true,
+              subtasks: {
+                include: {
+                  dependencies: {
+                    include: {
+                      blocking: {
+                        select: { id: true },
+                      },
+                    },
+                  },
+                },
+                orderBy: { createdAt: 'asc' },
+              },
             },
           },
           dependencies: {

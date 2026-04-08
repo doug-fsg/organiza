@@ -66,7 +66,7 @@ export function DashboardContent({ activeTab }: DashboardContentProps) {
   })
 
   const handleUseModel = (modelId: string, projectTitle?: string) => {
-    createProjectFromModel.mutate({
+    return createProjectFromModel.mutateAsync({
       subtaskTemplateId: modelId,
       projectTitle: projectTitle || 'Novo projeto',
     })
@@ -116,8 +116,8 @@ export function DashboardContent({ activeTab }: DashboardContentProps) {
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold">Setores</h1>
-              <p className="text-muted-foreground">Organize projetos por departamento</p>
+              <h1 className="page-title">Setores</h1>
+              <p className="page-description">Organize projetos por departamento</p>
             </div>
             <DepartmentForm />
           </div>
@@ -129,8 +129,8 @@ export function DashboardContent({ activeTab }: DashboardContentProps) {
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold">Modelos de Tarefas</h1>
-              <p className="text-muted-foreground">
+              <h1 className="page-title">Modelos de Tarefas</h1>
+              <p className="page-description">
                 Defina etapas reutilizáveis. Aplique em projetos novos ou existentes. Workflow sequencial obrigatório.
               </p>
             </div>
@@ -143,7 +143,12 @@ export function DashboardContent({ activeTab }: DashboardContentProps) {
               onOpenChange={setSubtaskModelFormOpen}
             />
           </div>
-          <SubtaskModelList onUseModel={handleUseModel} promptProjectTitle isCreating={createProjectFromModel.isPending} />
+          <SubtaskModelList
+            onUseModel={handleUseModel}
+            promptProjectTitle
+            isCreating={createProjectFromModel.isPending}
+            onRequestNewModel={() => setSubtaskModelFormOpen(true)}
+          />
         </div>
       ) : null
     case 'contacts':
@@ -151,8 +156,8 @@ export function DashboardContent({ activeTab }: DashboardContentProps) {
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold">Contatos</h1>
-              <p className="text-muted-foreground">
+              <h1 className="page-title">Contatos</h1>
+              <p className="page-description">
                 Gerencie seus contatos e atributos personalizados
               </p>
             </div>

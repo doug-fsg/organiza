@@ -50,7 +50,7 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
-import { NotificationCenter } from "@/components/notification-center"
+import { getRoleBadgeClasses } from "@/lib/theme-utils"
 
 interface User {
   id: string
@@ -98,25 +98,6 @@ export function AppSidebar({
         return 'Financeiro'
       default:
         return role
-    }
-  }
-
-  const getRoleColor = (role: UserRole) => {
-    switch (role) {
-      case UserRole.OWNER:
-        return 'bg-purple-100 text-purple-800'
-      case UserRole.ADMIN:
-        return 'bg-red-100 text-red-800'
-      case UserRole.MANAGER:
-        return 'bg-blue-100 text-blue-800'
-      case UserRole.MEMBER:
-        return 'bg-green-100 text-green-800'
-      case UserRole.SUPPLIER:
-        return 'bg-orange-100 text-orange-800'
-      case UserRole.FINANCIAL:
-        return 'bg-emerald-100 text-emerald-800'
-      default:
-        return 'bg-muted text-muted-foreground'
     }
   }
 
@@ -367,7 +348,7 @@ export function AppSidebar({
                   <User2 className="size-4" />
                   <div className="flex flex-col">
                     <span>{user.name}</span>
-                    <Badge variant="secondary" className={`text-xs w-fit ${getRoleColor(user.role)}`}>
+                    <Badge variant="secondary" className={`text-xs w-fit ${getRoleBadgeClasses(user.role, "soft")}`}>
                       {getRoleLabel(user.role)}
                     </Badge>
                   </div>

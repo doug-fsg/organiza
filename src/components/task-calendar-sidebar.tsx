@@ -131,11 +131,11 @@ export function TaskCalendarSidebar({
       case SubtaskStatus.IN_PROGRESS:
         return 'bg-blue-500'
       case SubtaskStatus.NOT_STARTED:
-        return 'bg-gray-500'
+        return 'bg-muted-foreground'
       case SubtaskStatus.REJECTED:
         return 'bg-red-600'
       default:
-        return 'bg-gray-500'
+        return 'bg-muted-foreground'
     }
   }
 
@@ -346,7 +346,7 @@ export function TaskCalendarSidebar({
                       onCheckedChange={() => toggleFilter('recurringTypes', 'NONE')}
                       className="rounded-sm" 
                     />
-                    <div className="w-3 h-3 rounded-sm bg-gray-500" />
+                    <div className="w-3 h-3 rounded-sm bg-muted-foreground" />
                     <label
                       htmlFor="recurring-none"
                       className="text-xs cursor-pointer"
@@ -362,7 +362,7 @@ export function TaskCalendarSidebar({
                         onCheckedChange={() => toggleFilter('recurringTypes', type.value)}
                         className="rounded-sm" 
                       />
-                      <div className="w-3 h-3 rounded-sm bg-purple-500" />
+                      <div className="w-3 h-3 rounded-sm bg-sky" />
                       <label
                         htmlFor={`recurring-${type.value}`}
                         className="text-xs cursor-pointer"

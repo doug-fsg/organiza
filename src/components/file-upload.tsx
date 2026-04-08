@@ -159,8 +159,8 @@ export function FileUpload({
         onDragLeave={handleDragLeave}
         className={`
           relative border-2 border-dashed rounded-lg p-6 transition-colors
-          ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-gray-50'}
-          ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-gray-400'}
+          ${isDragging ? 'border-primary bg-primary/10' : 'border-border bg-muted/50'}
+          ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-muted-foreground/40'}
         `}
         onClick={() => !disabled && fileInputRef.current?.click()}
       >
@@ -175,11 +175,11 @@ export function FileUpload({
         />
 
         <div className="flex flex-col items-center justify-center text-center">
-          <Upload className={`h-8 w-8 mb-2 ${isDragging ? 'text-blue-500' : 'text-gray-400'}`} />
-          <p className="text-sm font-medium text-gray-700 mb-1">
+          <Upload className={`h-8 w-8 mb-2 ${isDragging ? 'text-primary' : 'text-muted-foreground'}`} />
+          <p className="text-sm font-medium text-foreground mb-1">
             {isDragging ? 'Solte os arquivos aqui' : 'Arraste arquivos ou clique para selecionar'}
           </p>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-muted-foreground leading-relaxed">
             Até {maxFiles} arquivos • Máximo {maxFileSize}MB cada
           </p>
         </div>
@@ -189,7 +189,7 @@ export function FileUpload({
       {selectedFiles.length > 0 && (
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-gray-700">
+            <span className="text-sm font-medium text-foreground">
               {selectedFiles.length} arquivo(s) selecionado(s)
             </span>
             <Button
@@ -202,11 +202,11 @@ export function FileUpload({
           </div>
 
           {selectedFiles.map((file, index) => (
-            <div key={index} className="flex items-center gap-2 p-2 bg-white border rounded">
+            <div key={index} className="flex items-center gap-2 p-2 bg-card border border-border rounded">
               {getFileIcon(file)}
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
-                <p className="text-xs text-gray-500">{formatFileSize(file.size)}</p>
+                <p className="text-sm font-medium text-foreground truncate">{file.name}</p>
+                <p className="text-xs text-muted-foreground tabular-nums">{formatFileSize(file.size)}</p>
               </div>
               {!isUploading && (
                 <Button
@@ -224,7 +224,7 @@ export function FileUpload({
           {isUploading && (
             <div className="space-y-1">
               <Progress value={uploadProgress} className="h-2" />
-              <p className="text-xs text-gray-500 text-center">{uploadProgress}%</p>
+              <p className="text-xs text-muted-foreground text-center tabular-nums">{uploadProgress}%</p>
             </div>
           )}
         </div>
