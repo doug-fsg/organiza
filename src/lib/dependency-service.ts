@@ -1,5 +1,6 @@
 import { PrismaClient, SubtaskStatus } from '@prisma/client'
 import { RecurringTaskService } from './recurring-service'
+import { dispatchWebhooks, webhookClientFromMainTask } from './webhook-dispatch'
 
 const prisma = new PrismaClient()
 
@@ -84,6 +85,31 @@ export class DependencyService {
           })
 
           unblockedSubtasks.push(dependent.id)
+
+          const forWebhook = await prisma.subtask.findUnique({
+            where: { id: dependent.id },
+            include: {
+              assignedTo: { select: { id: true, name: true } },
+              mainTask: {
+                include: {
+                  client: { select: { id: true, name: true, email: true } },
+                },
+              },
+            },
+          })
+          if (forWebhook) {
+            void dispatchWebhooks(forWebhook.mainTask.accountId, 'task.completed', {
+              taskId: forWebhook.id,
+              mainTaskId: forWebhook.mainTaskId,
+              title: forWebhook.title,
+              status: forWebhook.status,
+              assignedTo: forWebhook.assignedTo
+                ? { id: forWebhook.assignedTo.id, name: forWebhook.assignedTo.name }
+                : null,
+              automationSource: { type: 'DEPENDENCY_UNBLOCKED' },
+              ...webhookClientFromMainTask(forWebhook.mainTask),
+            })
+          }
 
           // Criar log de atividade
           await this.createActivityLog({

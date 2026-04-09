@@ -3,6 +3,8 @@ import { createTRPCRouter, accountProcedure, protectedProcedure } from '@/server
 import { TRPCError } from '@trpc/server'
 import { UserRole } from '@prisma/client'
 import { dispatchWebhooks } from '@/lib/webhook-dispatch'
+import { clientPublicSelect } from '@/lib/client-public-fields'
+import { parseInternalMetadataFromDb } from '@/lib/client-internal-metadata'
 
 export const clientRouter = createTRPCRouter({
   list: accountProcedure
@@ -22,6 +24,7 @@ export const clientRouter = createTRPCRouter({
           orderBy: { name: 'asc' },
           take: limit,
           skip: offset,
+          select: clientPublicSelect,
         }),
         ctx.prisma.client.count({
           where: { accountId: ctx.accountId },
@@ -40,6 +43,7 @@ export const clientRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const client = await ctx.prisma.client.findUnique({
         where: { id: input.id },
+        select: clientPublicSelect,
       })
 
       if (!client || client.accountId !== ctx.accountId) {
@@ -86,7 +90,10 @@ export const clientRouter = createTRPCRouter({
           customValues: input.customValues ? JSON.stringify(input.customValues) : null,
           accountId: ctx.accountId,
         },
+        select: { ...clientPublicSelect, internalMetadata: true },
       })
+
+      const { internalMetadata: createdMeta, ...publicClient } = client
 
       void dispatchWebhooks(ctx.accountId!, 'client.created', {
         clientId: client.id,
@@ -94,9 +101,10 @@ export const clientRouter = createTRPCRouter({
         email: client.email,
         phone: client.phone,
         createdAt: client.createdAt.toISOString(),
+        internalMetadata: parseInternalMetadataFromDb(createdMeta),
       })
 
-      return client
+      return publicClient
     }),
 
   update: protectedProcedure
@@ -145,7 +153,10 @@ export const clientRouter = createTRPCRouter({
           email: updateData.email === '' ? null : updateData.email,
           customValues: updateData.customValues ? JSON.stringify(updateData.customValues) : undefined,
         },
+        select: { ...clientPublicSelect, internalMetadata: true },
       })
+
+      const { internalMetadata: updatedMeta, ...publicUpdated } = updated
 
       void dispatchWebhooks(ctx.accountId!, 'client.updated', {
         clientId: updated.id,
@@ -153,9 +164,10 @@ export const clientRouter = createTRPCRouter({
         email: updated.email,
         phone: updated.phone,
         updatedAt: updated.updatedAt.toISOString(),
+        internalMetadata: parseInternalMetadataFromDb(updatedMeta),
       })
 
-      return updated
+      return publicUpdated
     }),
 
   delete: protectedProcedure

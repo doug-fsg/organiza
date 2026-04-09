@@ -197,13 +197,18 @@ export const taskFieldRouter = createTRPCRouter({
 
               const accountId = updatedSubtask.mainTask.accountId
               const eventMap: Partial<Record<SubtaskStatus, string>> = {
+                [SubtaskStatus.TODO]: 'task.reopened',
                 [SubtaskStatus.IN_PROGRESS]: 'task.started',
                 [SubtaskStatus.BLOCKED]: 'task.blocked',
                 [SubtaskStatus.COMPLETED_PENDING]: 'task.completed',
                 [SubtaskStatus.APPROVED]: 'task.approved',
+                [SubtaskStatus.REJECTED]: 'task.rejected',
               }
-              
-              const event = eventMap[newStatus]
+
+              let event = eventMap[newStatus]
+              if (event === 'task.reopened' && oldStatus === SubtaskStatus.TODO) {
+                event = undefined
+              }
               if (event && accountId) {
                 void dispatchWebhooks(accountId, event, {
                   taskId: updatedSubtask.id,

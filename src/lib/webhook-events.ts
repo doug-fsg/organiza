@@ -6,6 +6,7 @@ export const WEBHOOK_EVENTS = {
   task: [
     { id: 'task.created', label: 'Tarefa criada' },
     { id: 'task.started', label: 'Tarefa iniciada' },
+    { id: 'task.reopened', label: 'Tarefa retornada a fazer' },
     { id: 'task.blocked', label: 'Tarefa bloqueada' },
     { id: 'task.unblocked', label: 'Tarefa desbloqueada' },
     { id: 'task.completed', label: 'Tarefa concluída' },

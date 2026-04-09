@@ -73,6 +73,7 @@
           "email": { "type": "string", "nullable": true },
           "address": { "type": "string", "nullable": true },
           "custom_values": { "type": "object" },
+          "internal_metadata": { "type": "object", "nullable": true, "description": "Metadados só API REST; não no app web" },
           "created_at": { "type": "string", "format": "date-time" },
           "updated_at": { "type": "string", "format": "date-time" }
         }
@@ -301,7 +302,8 @@
                   "phone": { "type": "string" },
                   "email": { "type": "string" },
                   "address": { "type": "string" },
-                  "custom_values": { "type": "object" }
+                  "custom_values": { "type": "object" },
+                  "internal_metadata": { "type": "object", "nullable": true }
                 }
               }
             }
@@ -337,7 +339,8 @@
                   "phone": { "type": "string" },
                   "email": { "type": "string" },
                   "address": { "type": "string" },
-                  "custom_values": { "type": "object" }
+                  "custom_values": { "type": "object" },
+                  "internal_metadata": { "type": "object", "nullable": true }
                 }
               }
             }

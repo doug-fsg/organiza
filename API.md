@@ -55,6 +55,8 @@ O `account_id` está em **Meu Perfil** (menu do usuário).
 - `GET /api/v1/accounts/{account_id}/clients/{client_id}` — Obter cliente
 - `PATCH /api/v1/accounts/{account_id}/clients/{client_id}` — Atualizar cliente
 
+Respostas de cliente incluem `internal_metadata` (objeto JSON ou `null`): metadados **somente para integrações via esta API** (não disponíveis no app web). No `POST`/`PATCH`, envie `internal_metadata` como objeto ou `null` para limpar; omitir o campo não altera o valor armazenado. Tamanho máximo após serialização: 64 KiB. Nos webhooks `client.created` e `client.updated`, o campo `internalMetadata` espelha esse valor (ou `null`).
+
 ### Atributos personalizados de clientes
 - `GET /api/v1/accounts/{account_id}/client-custom-attributes` — Listar atributos
 - `POST /api/v1/accounts/{account_id}/client-custom-attributes` — Criar atributo
@@ -124,6 +126,17 @@ curl -X PATCH "https://seu-dominio.com/api/v1/accounts/SEU_ACCOUNT_ID/clients/CL
 
 *Na resposta, `custom_values` retorna as chaves como **nomes dos atributos** (não IDs). Chaves enviadas que não correspondem a nenhum atributo são ignoradas; nesse caso, a resposta inclui `meta.unmapped_keys` com a lista das chaves não mapeadas.*
 
+### Metadados internos (`internal_metadata`)
+
+Exclusivo da API REST com API key. Exemplo no PATCH:
+
+```bash
+curl -X PATCH "https://seu-dominio.com/api/v1/accounts/SEU_ACCOUNT_ID/clients/CLIENT_ID" \
+  -H "Content-Type: application/json" \
+  -H "api_access_token: sk_sua_chave" \
+  -d '{"internal_metadata": {"id_externo": "abc-123", "origem": "erp"}}'
+```
+
 ### Criar atributo personalizado
 ```bash
 curl -X POST "https://seu-dominio.com/api/v1/accounts/SEU_ACCOUNT_ID/client-custom-attributes" \
@@ -153,9 +166,15 @@ Configure webhooks em **Meu Perfil** → Integrações para receber notificaçõ
 }
 ```
 
-Nos eventos de **tarefa** (`task.created`, `task.started`, `task.blocked`, `task.unblocked`, `task.completed`, `task.approved`, `task.rejected`, `task.reassigned`, `task.full_completed`), o objeto `data` inclui `clientId` e `client` (`id`, `name`, `email`) do contato vinculado ao **projeto** da tarefa, ou `clientId: null` e `client: null` se não houver vínculo.
+Nos eventos de **tarefa** (`task.created`, `task.started`, `task.reopened`, `task.blocked`, `task.unblocked`, `task.completed`, `task.approved`, `task.rejected`, `task.reassigned`, `task.full_completed`), o objeto `data` inclui `clientId` e `client` (`id`, `name`, `email`) do contato vinculado ao **projeto** da tarefa, ou `clientId: null` e `client: null` se não houver vínculo.
 
-**Eventos disponíveis:** `task.created`, `task.started`, `task.blocked`, `task.unblocked`, `task.completed`, `task.approved`, `task.rejected`, `task.reassigned`, `task.full_completed`, `project.created`, `project.updated`, `project.deleted`, `client.created`, `client.updated`, `service_payment.created`, `service_payment.approved`, `service_payment.rejected`, `service_payment.paid`, `comment.added`.
+- **`task.reopened`**: quando a subtarefa volta para **A fazer** (`TODO`) a partir de outro status.
+- **`task.completed`**: também pode incluir `automationSource` (ex.: desbloqueio automático por dependências ou botão inteligente).
+- **`task.approved`**: em conclusão com aprovação automática, o campo `autoApproved: true` indica que não passou pelo gestor.
+
+Nos eventos `client.created` e `client.updated`, `data` inclui os campos do contato e **`internalMetadata`** (objeto ou `null`), quando existir metadado interno gravado pela API.
+
+**Eventos disponíveis:** `task.created`, `task.started`, `task.reopened`, `task.blocked`, `task.unblocked`, `task.completed`, `task.approved`, `task.rejected`, `task.reassigned`, `task.full_completed`, `project.created`, `project.updated`, `project.deleted`, `client.created`, `client.updated`, `service_payment.created`, `service_payment.approved`, `service_payment.rejected`, `service_payment.paid`, `comment.added`.
 
 Se configurar um secret, o header `X-Webhook-Signature` conterá assinatura HMAC-SHA256 do body para validar a origem.
 

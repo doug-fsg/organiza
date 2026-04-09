@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { createTRPCRouter, accountProcedure } from '@/server/api/trpc'
 import { MainTaskStatus, Priority } from '@prisma/client'
 import { dispatchWebhooks } from '@/lib/webhook-dispatch'
+import { clientPublicSelect } from '@/lib/client-public-fields'
 
 export const mainTaskRouter = createTRPCRouter({
   // Criar tarefa principal
@@ -29,7 +30,7 @@ export const mainTaskRouter = createTRPCRouter({
         },
         include: {
           creator: true,
-          client: true,
+          client: { select: clientPublicSelect },
           subtasks: {
             include: {
               assignedTo: true,
@@ -83,7 +84,7 @@ export const mainTaskRouter = createTRPCRouter({
         },
         include: {
           creator: true,
-          client: true,
+          client: { select: clientPublicSelect },
           subtaskTemplate: true,
           departmentTasks: {
             include: {
@@ -126,7 +127,7 @@ export const mainTaskRouter = createTRPCRouter({
         },
         include: {
           creator: true,
-          client: true,
+          client: { select: clientPublicSelect },
           departmentTasks: {
             include: {
               department: true,
@@ -233,7 +234,7 @@ export const mainTaskRouter = createTRPCRouter({
         data,
         include: {
           creator: true,
-          client: true,
+          client: { select: clientPublicSelect },
           departmentTasks: {
             include: {
               department: true,

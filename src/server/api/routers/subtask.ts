@@ -3,6 +3,7 @@ import { createTRPCRouter, publicProcedure, accountProcedure } from '@/server/ap
 import { SubtaskStatus, Priority, MainTaskStatus, UserRole, RecurringType, WeekDay } from '@prisma/client'
 import { DependencyService } from '@/lib/dependency-service'
 import { dispatchWebhooks, webhookClientFromMainTask } from '@/lib/webhook-dispatch'
+import { clientPublicSelect } from '@/lib/client-public-fields'
 
 export const subtaskRouter = createTRPCRouter({
   // Criar subtarefa
@@ -127,7 +128,7 @@ export const subtaskRouter = createTRPCRouter({
           mainTask: {
             include: {
               creator: true,
-              client: true,
+              client: { select: clientPublicSelect },
             },
           },
           comments: {
@@ -207,7 +208,7 @@ export const subtaskRouter = createTRPCRouter({
           mainTask: {
             include: {
               creator: true,
-              client: true,
+              client: { select: clientPublicSelect },
               subtasks: {
                 include: {
                   dependencies: {
@@ -289,7 +290,7 @@ export const subtaskRouter = createTRPCRouter({
           mainTask: {
             include: {
               creator: true,
-              client: true,
+              client: { select: clientPublicSelect },
             },
           },
         },
@@ -376,15 +377,22 @@ export const subtaskRouter = createTRPCRouter({
         console.log('✅ Novas dependências criadas:', newDependencies.length)
       }
 
-      // Webhook: status alterado
+      // Webhook: status alterado (qualquer transição relevante para integrações)
       if (data.status && data.status !== currentSubtask.status) {
         const accountId = updatedSubtask.mainTask.accountId
         const eventMap: Partial<Record<SubtaskStatus, string>> = {
+          [SubtaskStatus.TODO]: 'task.reopened',
           [SubtaskStatus.IN_PROGRESS]: 'task.started',
           [SubtaskStatus.BLOCKED]: 'task.blocked',
           [SubtaskStatus.COMPLETED_PENDING]: 'task.completed',
+          [SubtaskStatus.APPROVED]: 'task.approved',
+          [SubtaskStatus.REJECTED]: 'task.rejected',
         }
-        const event = eventMap[data.status]
+        let event = eventMap[data.status]
+        // "task.reopened" só quando realmente volta para a fazer (não se já era TODO)
+        if (event === 'task.reopened' && currentSubtask.status === SubtaskStatus.TODO) {
+          event = undefined
+        }
         if (event && accountId) {
           void dispatchWebhooks(accountId, event, {
             taskId: updatedSubtask.id,
@@ -662,6 +670,32 @@ export const subtaskRouter = createTRPCRouter({
             status: result.newStatus,
             assignedTo: subtask.assignedTo ? { id: subtask.assignedTo.id, name: subtask.assignedTo.name } : null,
             pendingDependencies: result.pendingDependencies,
+            ...webhookClientFromMainTask(subtask.mainTask),
+          })
+        }
+      }
+
+      // Conclusão com aprovação automática (sem gestor): envia task.approved
+      if (result.newStatus === SubtaskStatus.APPROVED) {
+        const subtask = await ctx.prisma.subtask.findUnique({
+          where: { id: input.id },
+          include: {
+            assignedTo: true,
+            mainTask: {
+              include: {
+                client: { select: { id: true, name: true, email: true } },
+              },
+            },
+          },
+        })
+        if (subtask) {
+          void dispatchWebhooks(subtask.mainTask.accountId, 'task.approved', {
+            taskId: subtask.id,
+            mainTaskId: subtask.mainTaskId,
+            title: subtask.title,
+            status: 'APPROVED',
+            autoApproved: result.isAutoApproved === true,
+            assignedTo: subtask.assignedTo ? { id: subtask.assignedTo.id, name: subtask.assignedTo.name } : null,
             ...webhookClientFromMainTask(subtask.mainTask),
           })
         }

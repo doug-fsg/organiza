@@ -570,6 +570,8 @@ model Client {
   email        String?
   address      String?
   customValues String?
+  /// JSON string; gravado só via API REST (API key). Não expor no tRPC / UI.
+  internalMetadata String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

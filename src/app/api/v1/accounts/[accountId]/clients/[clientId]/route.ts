@@ -8,6 +8,10 @@ import {
 } from '@/lib/api-external/custom-values'
 import { prisma } from '@/lib/prisma'
 import { dispatchWebhooks } from '@/lib/webhook-dispatch'
+import {
+  parseInternalMetadataFromDb,
+  validateInternalMetadataBody,
+} from '@/lib/client-internal-metadata'
 
 function parseCustomValues(customValues: string | null): Record<string, unknown> {
   if (!customValues) return {}
@@ -48,6 +52,7 @@ export async function GET(
     email: client.email,
     address: client.address,
     custom_values: customValues,
+    internal_metadata: parseInternalMetadataFromDb(client.internalMetadata),
     created_at: client.createdAt,
     updated_at: client.updatedAt,
   })
@@ -69,28 +74,27 @@ export async function PATCH(
   })
   if (!existing) return apiNotFound('Cliente não encontrado')
 
-  let body: {
-    name?: string
-    phone?: string
-    email?: string
-    address?: string
-    custom_values?: Record<string, unknown>
-  }
+  let body: Record<string, unknown>
   try {
-    body = await req.json()
+    body = (await req.json()) as Record<string, unknown>
   } catch {
     return apiError('JSON inválido', 400)
   }
 
-  if (body?.name !== undefined && !body.name.trim()) {
+  if (body.name !== undefined && typeof body.name === 'string' && !body.name.trim()) {
     return apiError('name não pode ser vazio', 400)
   }
 
+  const metaRes = validateInternalMetadataBody(body)
+  if (!metaRes.ok) {
+    return apiError(metaRes.message, 400)
+  }
+
   const data: Record<string, unknown> = {}
-  if (body.name !== undefined) data.name = body.name.trim()
-  if (body.phone !== undefined) data.phone = body.phone || null
-  if (body.email !== undefined) data.email = body.email || null
-  if (body.address !== undefined) data.address = body.address || null
+  if (body.name !== undefined && typeof body.name === 'string') data.name = body.name.trim()
+  if (body.phone !== undefined) data.phone = typeof body.phone === 'string' ? body.phone || null : null
+  if (body.email !== undefined) data.email = typeof body.email === 'string' ? body.email || null : null
+  if (body.address !== undefined) data.address = typeof body.address === 'string' ? body.address || null : null
 
   let unmappedKeys: string[] = []
   if (body.custom_values !== undefined) {
@@ -102,9 +106,13 @@ export async function PATCH(
     unmappedKeys = unmapped
   }
 
+  if (metaRes.mode === 'set') {
+    data.internalMetadata = metaRes.serialized
+  }
+
   const client = await prisma.client.update({
     where: { id: clientId },
-    data,
+    data: data as Parameters<typeof prisma.client.update>[0]['data'],
   })
 
   void dispatchWebhooks(accountId, 'client.updated', {
@@ -113,6 +121,7 @@ export async function PATCH(
     email: client.email,
     phone: client.phone,
     updatedAt: client.updatedAt.toISOString(),
+    internalMetadata: parseInternalMetadataFromDb(client.internalMetadata),
   })
 
   const idToName = await getIdToNameMap(accountId)
@@ -129,6 +138,7 @@ export async function PATCH(
       email: client.email,
       address: client.address,
       custom_values: customValues,
+      internal_metadata: parseInternalMetadataFromDb(client.internalMetadata),
       created_at: client.createdAt,
       updated_at: client.updatedAt,
     },
