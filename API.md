@@ -48,6 +48,10 @@ O `account_id` está em **Meu Perfil** (menu do usuário).
 ### Subtarefas
 - `GET /api/v1/accounts/{account_id}/projects/{project_id}/subtasks` — Listar subtarefas (cada item inclui `client_id` e `client` do projeto, quando houver contato vinculado)
 - `POST /api/v1/accounts/{account_id}/projects/{project_id}/subtasks` — Criar subtarefa (resposta inclui `client_id` e `client` do projeto quando houver)
+- `GET /api/v1/accounts/{account_id}/projects/{project_id}/subtasks/{subtask_id}` — Obter uma subtarefa
+- `PATCH /api/v1/accounts/{account_id}/projects/{project_id}/subtasks/{subtask_id}` — Atualizar **checklist** da subtarefa (substitui o array inteiro de itens)
+
+**Checklist (`checklist_items`):** em cada subtarefa, lista opcional de objetos `{ "id": "string", "text": "string", "checked": boolean }`. No `POST`, o campo é opcional: omitir não define checklist; `null` ou `[]` grava sem itens. No `PATCH` da subtarefa, `checklist_items` é obrigatório no body; use `null` ou `[]` para limpar. Máximo de 100 itens por subtarefa; texto de cada item até 2000 caracteres; `id` único dentro do array. Alterações de checklist **via `PATCH` desta API não disparam webhooks** (não há evento `task.updated` na lista de webhooks).
 
 ### Clientes
 - `GET /api/v1/accounts/{account_id}/clients` — Listar clientes
@@ -111,6 +115,22 @@ curl -X POST "https://seu-dominio.com/api/v1/accounts/SEU_ACCOUNT_ID/projects/PR
   -H "Content-Type: application/json" \
   -H "api_access_token: sk_sua_chave" \
   -d '{"title": "Revisar documento"}'
+```
+
+### Criar subtarefa com checklist
+```bash
+curl -X POST "https://seu-dominio.com/api/v1/accounts/SEU_ACCOUNT_ID/projects/PROJECT_ID/subtasks" \
+  -H "Content-Type: application/json" \
+  -H "api_access_token: sk_sua_chave" \
+  -d '{"title": "Onboarding","checklist_items":[{"id":"a1","text":"Enviar contrato","checked":false},{"id":"a2","text":"Assinar","checked":false}]}'
+```
+
+### Atualizar checklist de uma subtarefa
+```bash
+curl -X PATCH "https://seu-dominio.com/api/v1/accounts/SEU_ACCOUNT_ID/projects/PROJECT_ID/subtasks/SUBTASK_ID" \
+  -H "Content-Type: application/json" \
+  -H "api_access_token: sk_sua_chave" \
+  -d '{"checklist_items":[{"id":"a1","text":"Enviar contrato","checked":true},{"id":"a2","text":"Assinar","checked":false}]}'
 ```
 
 ### Atualizar cliente (adicionar atributos)

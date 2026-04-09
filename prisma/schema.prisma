@@ -593,6 +593,8 @@ model TaskFieldDefinition {
   color       String?  // Cor do botão (ex: hex ou nome da cor)
   projectIds  String?  // JSON array de IDs de projeto (MainTask)
   options     String? // Relevante se for tipo SELECT (armazenado como JSON string)
+  /// Se true, ao usar o botão abre o diálogo de conclusão (notas/anexos/checklist) antes de executar as automações
+  confirmBeforeExecute Boolean @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   

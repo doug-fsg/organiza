@@ -34,7 +34,11 @@ export function KanbanSubtaskStatusSelect({
       (dep: any) => dep.blocking && dep.blocking.status !== SubtaskStatus.APPROVED
     ) || []
 
-  if (subtask.status === SubtaskStatus.BLOCKED) {
+  const rawLocal = localStatuses[subtask.id]
+  const displayStatus: SubtaskStatus =
+    rawLocal && !rawLocal.startsWith('btn_') ? (rawLocal as SubtaskStatus) : subtask.status
+
+  if (displayStatus === SubtaskStatus.BLOCKED) {
     return (
       <Badge variant="destructive" className="gap-1">
         <GitBranch className="h-3 w-3" aria-hidden />
@@ -42,10 +46,10 @@ export function KanbanSubtaskStatusSelect({
       </Badge>
     )
   }
-  if (subtask.status === SubtaskStatus.COMPLETED_PENDING) {
+  if (displayStatus === SubtaskStatus.COMPLETED_PENDING) {
     return <Badge variant="warning">Aguardando</Badge>
   }
-  if (subtask.status === SubtaskStatus.APPROVED) {
+  if (displayStatus === SubtaskStatus.APPROVED) {
     return (
       <Badge variant="success" className="gap-1">
         <CheckCircle className="h-3 w-3" aria-hidden />
@@ -61,21 +65,20 @@ export function KanbanSubtaskStatusSelect({
     )
   }
 
-  const isSmartBtn =
-    (localStatuses[subtask.id] || subtask.activeActionButtonId)?.startsWith('btn_')
+  const selectValue =
+    rawLocal ||
+    (subtask.activeActionButtonId ? `btn_${subtask.activeActionButtonId}` : subtask.status)
+  const isSmartBtn = selectValue.startsWith('btn_')
 
   return (
     <Select
-      value={
-        localStatuses[subtask.id] ||
-        (subtask.activeActionButtonId ? `btn_${subtask.activeActionButtonId}` : subtask.status)
-      }
+      value={selectValue}
       onValueChange={(value) => onStatusChange(subtask.id, value)}
     >
       <SelectTrigger
         className={cn(
           'font-medium shadow-sm transition-all',
-          isSmartBtn ? 'bg-primary font-bold text-primary-foreground' : getStatusClasses(subtask.status as string),
+          isSmartBtn ? 'bg-primary font-bold text-primary-foreground' : getStatusClasses(displayStatus as string),
           triggerClassName ?? 'w-[150px] border-0'
         )}
       >

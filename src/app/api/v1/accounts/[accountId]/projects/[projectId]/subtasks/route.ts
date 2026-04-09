@@ -4,6 +4,11 @@ import { apiSuccess, apiUnauthorized, apiNotFound, apiError } from '@/lib/api-ex
 import { prisma } from '@/lib/prisma'
 import { Priority, MainTaskStatus } from '@prisma/client'
 import { dispatchWebhooks, webhookClientFromMainTask } from '@/lib/webhook-dispatch'
+import {
+  parseChecklistFromDb,
+  validateChecklistItemsInput,
+  serializeChecklistItems,
+} from '@/lib/api-external/checklist'
 
 const priorityMap: Record<string, Priority> = {
   low: Priority.LOW,
@@ -51,6 +56,7 @@ export async function GET(
     assigned_to: s.assignedTo,
     estimated_hours: s.estimatedHours,
     actual_hours: s.actualHours,
+    checklist_items: parseChecklistFromDb(s.checklistItems),
     client_id: clientPayload.clientId,
     client: clientPayload.client,
     created_at: s.createdAt,
@@ -86,6 +92,7 @@ export async function POST(
     deadline?: string
     assigned_to_id?: string
     estimated_hours?: number
+    checklist_items?: unknown
   }
   try {
     body = await req.json()
@@ -95,6 +102,18 @@ export async function POST(
 
   if (!body?.title?.trim()) {
     return apiError('title é obrigatório', 400)
+  }
+
+  let checklistDb: string | null | undefined
+  if ('checklist_items' in body) {
+    const raw = body.checklist_items
+    if (raw === null) {
+      checklistDb = null
+    } else {
+      const v = validateChecklistItemsInput(raw)
+      if (!v.ok) return apiError(v.message, 400)
+      checklistDb = serializeChecklistItems(v.items)
+    }
   }
 
   const priority = body.priority && priorityMap[body.priority.toLowerCase()]
@@ -110,9 +129,10 @@ export async function POST(
       assignedToId: body.assigned_to_id || null,
       estimatedHours: body.estimated_hours ?? null,
       mainTaskId: projectId,
+      ...(checklistDb !== undefined ? { checklistItems: checklistDb } : {}),
     },
     include: {
-      assignedTo: { select: { id: true, name: true } },
+      assignedTo: { select: { id: true, name: true, email: true } },
     },
   })
 
@@ -144,6 +164,8 @@ export async function POST(
     deadline: subtask.deadline,
     assigned_to: subtask.assignedTo,
     estimated_hours: subtask.estimatedHours,
+    actual_hours: subtask.actualHours,
+    checklist_items: parseChecklistFromDb(subtask.checklistItems),
     client_id: clientOut.clientId,
     client: clientOut.client,
     created_at: subtask.createdAt,

@@ -894,11 +894,21 @@ export const subtaskRouter = createTRPCRouter({
       return result
     }),
 
-  // Verificar dependências de uma subtarefa
+  // Verificar dependências de uma subtarefa (+ requiresApproval da BD para o modal de conclusão)
   checkDependencies: publicProcedure
     .input(z.object({ id: z.string() }))
-    .query(async ({ input }) => {
-      return await DependencyService.checkDependencies(input.id)
+    .query(async ({ ctx, input }) => {
+      const [depCheck, row] = await Promise.all([
+        DependencyService.checkDependencies(input.id),
+        ctx.prisma.subtask.findUnique({
+          where: { id: input.id },
+          select: { requiresApproval: true },
+        }),
+      ])
+      return {
+        ...depCheck,
+        requiresApproval: row?.requiresApproval ?? true,
+      }
     }),
 
   // Buscar histórico de atividades de uma subtarefa

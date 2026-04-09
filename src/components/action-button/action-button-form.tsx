@@ -7,10 +7,11 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { api } from '@/lib/api'
 import { toast } from 'sonner'
 import { LoadingSpinner } from '@/components/loading-spinner'
-import { Sparkles, CheckCircle2, MessageSquare, Globe, Rocket, Plus, Pencil } from 'lucide-react'
+import { Sparkles, Globe, Plus, Pencil, HelpCircle } from 'lucide-react'
 import { SubtaskStatus } from '@prisma/client'
 import { cn } from '@/lib/utils'
 
@@ -46,22 +47,27 @@ export function ActionButtonForm({ button, trigger, onSuccess }: ActionButtonFor
   
   // Actions Toggle
   const [actionStatus, setActionStatus] = useState(false)
-  const [targetStatus, setTargetStatus] = useState<SubtaskStatus>('FINISHED')
+  const [targetStatus, setTargetStatus] = useState<SubtaskStatus>(SubtaskStatus.IN_PROGRESS)
   const [actionComment, setActionComment] = useState(false)
   const [commentText, setCommentText] = useState('')
   const [actionWebhook, setActionWebhook] = useState(false)
+  const [webhookUrl, setWebhookUrl] = useState('')
   const [actionCompleteMain, setActionCompleteMain] = useState(false)
+  /** Abre o diálogo de conclusão antes de executar o botão (como em "Concluído") */
+  const [confirmBeforeExecute, setConfirmBeforeExecute] = useState(false)
 
   useEffect(() => {
     if (button && open) {
       setName(button.name)
       setColor(button.color || 'amber')
       setSelectedProjects(button.projectIds ? JSON.parse(button.projectIds) : [])
+      setConfirmBeforeExecute(Boolean(button.confirmBeforeExecute))
       
       // Reset actions
       setActionStatus(false)
       setActionComment(false)
       setActionWebhook(false)
+      setWebhookUrl('')
       setActionCompleteMain(false)
       
       button.actions.forEach((act: any) => {
@@ -75,7 +81,15 @@ export function ActionButtonForm({ button, trigger, onSuccess }: ActionButtonFor
           const payload = JSON.parse(act.actionPayload)
           setCommentText(payload.comment)
         }
-        if (act.actionType === 'FIRE_WEBHOOK') setActionWebhook(true)
+        if (act.actionType === 'FIRE_WEBHOOK') {
+          setActionWebhook(true)
+          try {
+            const p = JSON.parse(act.actionPayload) as { webhookUrl?: string }
+            if (typeof p.webhookUrl === 'string') setWebhookUrl(p.webhookUrl)
+          } catch {
+            /* ignore */
+          }
+        }
         if (act.actionType === 'COMPLETE_MAINTASK') setActionCompleteMain(true)
       })
     } else if (open) {
@@ -91,11 +105,22 @@ export function ActionButtonForm({ button, trigger, onSuccess }: ActionButtonFor
     setActionComment(false)
     setCommentText('')
     setActionWebhook(false)
+    setWebhookUrl('')
     setActionCompleteMain(false)
+    setConfirmBeforeExecute(false)
   }
 
   const handleSave = async () => {
     if (!name) return toast.error('Dê um nome ao botão')
+    if (actionWebhook) {
+      const w = webhookUrl.trim()
+      if (!w) return toast.error('Informe a URL do webhook')
+      try {
+        new URL(w)
+      } catch {
+        return toast.error('URL do webhook inválida')
+      }
+    }
 
     try {
       let buttonId = button?.id
@@ -106,6 +131,7 @@ export function ActionButtonForm({ button, trigger, onSuccess }: ActionButtonFor
           name,
           color,
           projectIds: JSON.stringify(selectedProjects),
+          confirmBeforeExecute,
         })
         await clearActionsMutation.mutateAsync({ fieldDefId: button.id })
       } else {
@@ -113,6 +139,7 @@ export function ActionButtonForm({ button, trigger, onSuccess }: ActionButtonFor
           name,
           color,
           projectIds: JSON.stringify(selectedProjects),
+          confirmBeforeExecute,
         })
         buttonId = newBtn.id
       }
@@ -142,11 +169,13 @@ export function ActionButtonForm({ button, trigger, onSuccess }: ActionButtonFor
         }))
       }
       if (actionWebhook) {
-        actionPromises.push(addActionMutation.mutateAsync({
-          fieldDefId: buttonId,
-          actionType: 'FIRE_WEBHOOK',
-          actionPayload: '{}'
-        }))
+        actionPromises.push(
+          addActionMutation.mutateAsync({
+            fieldDefId: buttonId,
+            actionType: 'FIRE_WEBHOOK',
+            actionPayload: JSON.stringify({ webhookUrl: webhookUrl.trim() }),
+          })
+        )
       }
 
       await Promise.all(actionPromises)
@@ -249,6 +278,36 @@ export function ActionButtonForm({ button, trigger, onSuccess }: ActionButtonFor
             <Label className="text-xs uppercase text-primary/60 font-bold tracking-widest flex items-center gap-2">
               <Sparkles className="w-3 h-3" /> Automações Simultâneas
             </Label>
+
+            <div
+              className={cn(
+                'flex items-start gap-3 rounded-lg border p-3 transition-colors',
+                confirmBeforeExecute ? 'border-primary/25 bg-primary/5' : 'section-muted-subtle border-transparent'
+              )}
+            >
+              <Checkbox
+                id="confirmBeforeExecute"
+                checked={confirmBeforeExecute}
+                onCheckedChange={(v) => setConfirmBeforeExecute(!!v)}
+              />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex min-w-0 flex-1 cursor-help items-center gap-1.5">
+                    <Label htmlFor="confirmBeforeExecute" className="text-sm font-medium cursor-pointer leading-snug">
+                      Confirmação antes de aplicar
+                    </Label>
+                    <HelpCircle
+                      className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                      aria-hidden
+                    />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs text-xs">
+                  Abre o mesmo diálogo de conclusão (notas, anexos, checklist) antes de rodar as automações do
+                  botão.
+                </TooltipContent>
+              </Tooltip>
+            </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className={cn("flex flex-col gap-3 p-3 rounded-lg border transition-colors", actionStatus ? "bg-primary/5 border-primary/20" : "section-muted-subtle border-transparent")}>
@@ -291,9 +350,48 @@ export function ActionButtonForm({ button, trigger, onSuccess }: ActionButtonFor
                 )}
               </div>
 
-              <div className={cn("flex items-center gap-3 p-3 rounded-lg border transition-colors md:col-span-2", actionWebhook ? "bg-amber-500/5 border-amber-500/20" : "section-muted-subtle border-transparent")}>
-                <Checkbox id="actionWebhook" checked={actionWebhook} onCheckedChange={(v) => setActionWebhook(!!v)} />
-                <Label htmlFor="actionWebhook" className="text-sm font-medium cursor-pointer">Notificar Webhook Externo</Label>
+              <div
+                className={cn(
+                  'flex flex-col gap-3 rounded-lg border p-3 transition-colors md:col-span-2',
+                  actionWebhook ? 'border-amber-500/25 bg-amber-500/[0.06]' : 'section-muted-subtle border-transparent'
+                )}
+              >
+                <div className="flex items-center gap-3">
+                  <Checkbox
+                    id="actionWebhook"
+                    checked={actionWebhook}
+                    onCheckedChange={(v) => {
+                      const on = !!v
+                      setActionWebhook(on)
+                      if (!on) setWebhookUrl('')
+                    }}
+                  />
+                  <Label htmlFor="actionWebhook" className="cursor-pointer text-sm font-medium">
+                    Webhook externo
+                  </Label>
+                </div>
+                {actionWebhook ? (
+                  <div className="space-y-2 pl-1 sm:pl-9">
+                    <Label htmlFor="webhook-url" className="text-xs text-muted-foreground">
+                      URL de destino
+                    </Label>
+                    <Input
+                      id="webhook-url"
+                      type="url"
+                      inputMode="url"
+                      autoComplete="off"
+                      spellCheck={false}
+                      placeholder="https://…"
+                      value={webhookUrl}
+                      onChange={(e) => setWebhookUrl(e.target.value)}
+                      className="h-9 border-primary/10 bg-background/80 font-mono text-sm"
+                    />
+                    <p className="text-[11px] leading-relaxed text-muted-foreground">
+                      POST JSON com o evento <span className="font-mono text-foreground/80">smartbutton.clicked</span>
+                      (mesmo formato dos webhooks nas integrações).
+                    </p>
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>

@@ -44,11 +44,22 @@ export function KanbanBoard({ userId, userRole, view }: KanbanBoardProps) {
     isOpen: boolean
     subtaskId: string
     subtaskTitle: string
+    initialChecklistItems: string | null
+    /** Botão inteligente a executar no modal (quando "confirmação antes" está ativa) */
+    pendingSmartButtonId: string | null
+    pendingSmartButtonName: string | null
+    requiresApproval: boolean
   }>({
     isOpen: false,
     subtaskId: '',
     subtaskTitle: '',
+    initialChecklistItems: null,
+    pendingSmartButtonId: null,
+    pendingSmartButtonName: null,
+    requiresApproval: true,
   })
+  const completionModalRef = useRef(completionModal)
+  completionModalRef.current = completionModal
   const utils = api.useUtils()
   const { playNotificationSound } = useNotificationSound()
   const previousUnreadCountRef = useRef<Record<string, number>>({})
@@ -279,17 +290,32 @@ export function KanbanBoard({ userId, userRole, view }: KanbanBoardProps) {
   }, [filteredSubtasks, activeTab]) as any[]
 
   const handleStatusChange = (subtaskId: string, newValue: string) => {
-    setLocalStatuses((prev) => ({ ...prev, [subtaskId]: newValue }))
+    const currentSubtask = subtasks?.find((s) => s.id === subtaskId)
 
     if (newValue.startsWith('btn_')) {
       const buttonId = newValue.substring(4)
+      const def = buttonDefs?.find((b: { id: string; confirmBeforeExecute?: boolean }) => b.id === buttonId)
+      if (def?.confirmBeforeExecute) {
+        setLocalStatuses((prev) => ({ ...prev, [subtaskId]: `btn_${buttonId}` }))
+        setCompletionModal({
+          isOpen: true,
+          subtaskId,
+          subtaskTitle: currentSubtask?.title || '',
+          initialChecklistItems: currentSubtask?.checklistItems ?? null,
+          pendingSmartButtonId: buttonId,
+          pendingSmartButtonName: (def as { name?: string }).name ?? null,
+          requiresApproval: Boolean(currentSubtask?.requiresApproval ?? true),
+        })
+        return
+      }
       setLocalStatuses((prev) => ({ ...prev, [subtaskId]: newValue }))
       executeSmartButton.mutate({ buttonId, subtaskId })
       return
     }
 
+    setLocalStatuses((prev) => ({ ...prev, [subtaskId]: newValue }))
+
     const newStatus = newValue as SubtaskStatus
-    const currentSubtask = subtasks?.find((s) => s.id === subtaskId)
     if (!currentSubtask) return
     if (currentSubtask.status === newStatus) return
     if (!Object.values(SubtaskStatus).includes(newStatus)) return
@@ -308,6 +334,10 @@ export function KanbanBoard({ userId, userRole, view }: KanbanBoardProps) {
         isOpen: true,
         subtaskId,
         subtaskTitle: currentSubtask?.title || '',
+        initialChecklistItems: currentSubtask?.checklistItems ?? null,
+        pendingSmartButtonId: null,
+        pendingSmartButtonName: null,
+        requiresApproval: Boolean(currentSubtask?.requiresApproval ?? true),
       })
       return
     }
@@ -448,13 +478,39 @@ export function KanbanBoard({ userId, userRole, view }: KanbanBoardProps) {
 
       <SubtaskCompletionModal
         isOpen={completionModal.isOpen}
-        onOpenChange={(open) => setCompletionModal((prev) => ({ ...prev, isOpen: open }))}
+        onOpenChange={(open) => {
+          if (!open) {
+            const id = completionModalRef.current.subtaskId
+            if (id) {
+              setLocalStatuses((s) => {
+                if (!(id in s)) return s
+                const next = { ...s }
+                delete next[id]
+                return next
+              })
+            }
+            setCompletionModal({
+              isOpen: false,
+              subtaskId: '',
+              subtaskTitle: '',
+              initialChecklistItems: null,
+              pendingSmartButtonId: null,
+              pendingSmartButtonName: null,
+              requiresApproval: true,
+            })
+          } else {
+            setCompletionModal((prev) => ({ ...prev, isOpen: true }))
+          }
+        }}
         subtaskId={completionModal.subtaskId}
         subtaskTitle={completionModal.subtaskTitle}
+        initialChecklistItems={completionModal.initialChecklistItems}
+        smartButtonIdAfterComplete={completionModal.pendingSmartButtonId}
+        smartButtonName={completionModal.pendingSmartButtonName}
+        requiresApproval={completionModal.requiresApproval}
         userId={userId}
         onSuccess={() => {
-          utils.subtask.getByUser.invalidate({ userRole: userRole as any })
-          setCompletionModal({ isOpen: false, subtaskId: '', subtaskTitle: '' })
+          void utils.subtask.getByUser.invalidate({ userRole: userRole as any })
         }}
       />
     </div>

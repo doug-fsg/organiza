@@ -305,6 +305,20 @@ export function SubtaskDetailsModal({
     })
   }
 
+  const handleMarkAllChecklist = () => {
+    if (checklist.length === 0 || checklist.every((i) => i.checked)) return
+    const updated = checklist.map((i) => ({ ...i, checked: true }))
+    setChecklist(updated)
+    updateSubtask.mutate({ id: subtask.id, checklistItems: updated })
+  }
+
+  const handleClearAllChecklist = () => {
+    if (checklist.length === 0 || checklist.every((i) => !i.checked)) return
+    const updated = checklist.map((i) => ({ ...i, checked: false }))
+    setChecklist(updated)
+    updateSubtask.mutate({ id: subtask.id, checklistItems: updated })
+  }
+
   const checkedCount = checklist.filter(item => item.checked).length
   const totalCount = checklist.length
   const commentsCount = comments?.length || 0
@@ -704,7 +718,32 @@ export function SubtaskDetailsModal({
 
           {/* Tab: Checklist */}
           <TabsContent value="checklist" className="space-y-4">
-            <ScrollArea className="h-[320px] pr-4">
+            {checklist.length > 0 ? (
+              <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+                <button
+                  type="button"
+                  className="cursor-pointer underline-offset-2 transition-colors hover:text-foreground hover:underline disabled:cursor-not-allowed disabled:opacity-40 disabled:no-underline"
+                  onClick={handleMarkAllChecklist}
+                  disabled={updateSubtask.isPending || checkedCount === checklist.length}
+                  title="Marcar todos os itens"
+                >
+                  Marcar todos
+                </button>
+                <span className="select-none text-border" aria-hidden>
+                  ·
+                </span>
+                <button
+                  type="button"
+                  className="cursor-pointer underline-offset-2 transition-colors hover:text-foreground hover:underline disabled:cursor-not-allowed disabled:opacity-40 disabled:no-underline"
+                  onClick={handleClearAllChecklist}
+                  disabled={updateSubtask.isPending || checkedCount === 0}
+                  title="Desmarcar todos os itens"
+                >
+                  Limpar todos
+                </button>
+              </div>
+            ) : null}
+            <ScrollArea className="h-[min(55vh,560px)] pr-4">
               {checklist.length > 0 ? (
                 <div className="space-y-2">
                   {checklist.map((item) => (

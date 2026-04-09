@@ -51,15 +51,33 @@
           "updated_at": { "type": "string", "format": "date-time" }
         }
       },
+      "ChecklistItem": {
+        "type": "object",
+        "required": ["id", "text", "checked"],
+        "properties": {
+          "id": { "type": "string" },
+          "text": { "type": "string" },
+          "checked": { "type": "boolean" }
+        }
+      },
       "Subtask": {
         "type": "object",
         "properties": {
           "id": { "type": "string" },
           "title": { "type": "string" },
-          "description": { "type": "string" },
+          "description": { "type": "string", "nullable": true },
           "status": { "type": "string" },
           "priority": { "type": "string" },
+          "deadline": { "type": "string", "format": "date-time", "nullable": true },
           "assigned_to": { "type": "object", "nullable": true },
+          "estimated_hours": { "type": "integer", "nullable": true },
+          "actual_hours": { "type": "integer", "nullable": true },
+          "checklist_items": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ChecklistItem" }
+          },
+          "client_id": { "type": "string", "nullable": true },
+          "client": { "type": "object", "nullable": true },
           "created_at": { "type": "string", "format": "date-time" },
           "updated_at": { "type": "string", "format": "date-time" }
         }
@@ -266,13 +284,60 @@
                   "priority": { "type": "string" },
                   "deadline": { "type": "string" },
                   "assigned_to_id": { "type": "string" },
-                  "estimated_hours": { "type": "number" }
+                  "estimated_hours": { "type": "number" },
+                  "checklist_items": {
+                    "type": "array",
+                    "items": { "$ref": "#/components/schemas/ChecklistItem" },
+                    "description": "Opcional. Omitir não altera; enviar [] ou null limpa o checklist."
+                  }
                 }
               }
             }
           }
         },
         "responses": { "200": { "description": "Subtarefa criada" } }
+      }
+    },
+    "/accounts/{account_id}/projects/{project_id}/subtasks/{subtask_id}": {
+      "get": {
+        "tags": ["Subtasks"],
+        "summary": "Obter subtarefa",
+        "parameters": [
+          { "name": "account_id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "project_id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "subtask_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Subtarefa" }, "404": { "description": "Não encontrado" } }
+      },
+      "patch": {
+        "tags": ["Subtasks"],
+        "summary": "Atualizar checklist da subtarefa",
+        "description": "Substitui o array inteiro de checklist_items. Alterações via esta rota não disparam webhooks.",
+        "parameters": [
+          { "name": "account_id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "project_id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "subtask_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["checklist_items"],
+                "properties": {
+                  "checklist_items": {
+                    "type": "array",
+                    "nullable": true,
+                    "items": { "$ref": "#/components/schemas/ChecklistItem" },
+                    "description": "null remove o checklist; array vazio também remove"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Subtarefa atualizada" }, "404": { "description": "Não encontrado" } }
       }
     },
     "/accounts/{account_id}/clients": {

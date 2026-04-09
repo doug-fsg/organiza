@@ -1,7 +1,9 @@
 import { z } from 'zod'
 import { createTRPCRouter, accountProcedure, publicProcedure } from '@/server/api/trpc'
 import { CustomAttributeType, SubtaskStatus, MainTaskStatus } from '@prisma/client'
+import type { WebhookPayload } from '@/lib/webhook-dispatch'
 import { dispatchWebhooks, webhookClientFromMainTask } from '@/lib/webhook-dispatch'
+import { postOutboundWebhook, validateOutboundWebhookUrl } from '@/lib/webhook-outbound'
 
 export const taskFieldRouter = createTRPCRouter({
   // Criar um novo botão ou campo
@@ -13,6 +15,7 @@ export const taskFieldRouter = createTRPCRouter({
       color: z.string().optional(),
       projectIds: z.string().optional(), // JSON array de IDs
       options: z.string().optional(),
+      confirmBeforeExecute: z.boolean().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       return ctx.prisma.taskFieldDefinition.create({
@@ -25,6 +28,7 @@ export const taskFieldRouter = createTRPCRouter({
 // @ts-ignore
           projectIds: input.projectIds || '[]',
           options: input.options,
+          confirmBeforeExecute: input.confirmBeforeExecute ?? false,
           accountId: ctx.accountId,
         },
       })
@@ -85,6 +89,7 @@ export const taskFieldRouter = createTRPCRouter({
       color: z.string().optional(),
       projectIds: z.string().optional(),
       options: z.string().optional(),
+      confirmBeforeExecute: z.boolean().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input
@@ -118,11 +123,45 @@ export const taskFieldRouter = createTRPCRouter({
 
   // Configurar o que o botão faz (Ações)
   addAction: accountProcedure
-    .input(z.object({
-      fieldDefId: z.string(),
-      actionType: z.enum(['CHANGE_STATUS', 'COMPLETE_MAINTASK', 'ADD_COMMENT', 'FIRE_WEBHOOK']),
-      actionPayload: z.string(), // json string
-    }))
+    .input(
+      z
+        .object({
+          fieldDefId: z.string(),
+          actionType: z.enum(['CHANGE_STATUS', 'COMPLETE_MAINTASK', 'ADD_COMMENT', 'FIRE_WEBHOOK']),
+          actionPayload: z.string(),
+        })
+        .superRefine((data, ctx) => {
+          if (data.actionType !== 'FIRE_WEBHOOK') return
+          let parsed: unknown
+          try {
+            parsed = JSON.parse(data.actionPayload)
+          } catch {
+            ctx.addIssue({
+              code: 'custom',
+              message: 'Payload JSON inválido',
+              path: ['actionPayload'],
+            })
+            return
+          }
+          const url = (parsed as { webhookUrl?: unknown }).webhookUrl
+          if (typeof url !== 'string' || !url.trim()) {
+            ctx.addIssue({
+              code: 'custom',
+              message: 'Informe a URL do webhook',
+              path: ['actionPayload'],
+            })
+            return
+          }
+          const v = validateOutboundWebhookUrl(url)
+          if (!v.ok) {
+            ctx.addIssue({
+              code: 'custom',
+              message: v.message,
+              path: ['actionPayload'],
+            })
+          }
+        })
+    )
     .mutation(async ({ ctx, input }) => {
       const fieldDef = await ctx.prisma.taskFieldDefinition.findFirst({
         where: { id: input.fieldDefId, accountId: ctx.accountId },
@@ -156,7 +195,14 @@ export const taskFieldRouter = createTRPCRouter({
 
       const subtask = await ctx.prisma.subtask.findUnique({
         where: { id: input.subtaskId },
-        include: { mainTask: true }
+        include: {
+          assignedTo: true,
+          mainTask: {
+            include: {
+              client: { select: { id: true, name: true, email: true } },
+            },
+          },
+        },
       })
 
       if (!subtask) throw new Error('Tarefa não encontrada')
@@ -357,12 +403,31 @@ export const taskFieldRouter = createTRPCRouter({
           }
 
           if (action.actionType === 'FIRE_WEBHOOK') {
-            void dispatchWebhooks(subtask.mainTask.accountId, 'smartbutton.clicked', {
-              taskId: subtask.id,
-              buttonId: button.id,
-              buttonName: button.name,
-              actionProcessed: action.actionType,
-              payload
+            const urlRaw = typeof payload.webhookUrl === 'string' ? payload.webhookUrl : ''
+            const v = validateOutboundWebhookUrl(urlRaw)
+            if (!v.ok) {
+              console.error('[SmartButton] Webhook URL inválida:', v.message)
+              continue
+            }
+            const accountId = subtask.mainTask.accountId
+            const webhookPayload: WebhookPayload = {
+              event: 'smartbutton.clicked',
+              timestamp: new Date().toISOString(),
+              accountId,
+              data: {
+                taskId: subtask.id,
+                mainTaskId: subtask.mainTaskId,
+                title: subtask.title,
+                buttonId: button.id,
+                buttonName: button.name,
+                assignedTo: subtask.assignedTo
+                  ? { id: subtask.assignedTo.id, name: subtask.assignedTo.name }
+                  : null,
+                ...webhookClientFromMainTask(subtask.mainTask),
+              },
+            }
+            void postOutboundWebhook(v.normalizedUrl, webhookPayload, null).catch((err) => {
+              console.error(`[SmartButton] Falha ao enviar webhook:`, err)
             })
           }
         } catch (e) {
