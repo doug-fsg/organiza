@@ -181,11 +181,19 @@ export const taskFieldRouter = createTRPCRouter({
 
   // EXECUTAR O BOTÃO (A MÁGICA)
   executeSmartButton: accountProcedure
-    .input(z.object({
-      buttonId: z.string(),
-      subtaskId: z.string(),
-    }))
+    .input(
+      z.object({
+        buttonId: z.string(),
+        subtaskId: z.string(),
+        /** Texto opcional do popup "Confirmação antes de aplicar" (só isso, não lê outros comentários). */
+        preflightNote: z.string().max(10_000).optional(),
+      })
+    )
     .mutation(async ({ ctx, input }) => {
+      const preflightNote =
+        input.preflightNote != null && input.preflightNote.trim() !== ''
+          ? input.preflightNote.trim()
+          : null
       const button = await ctx.prisma.taskFieldDefinition.findFirst({
         where: { id: input.buttonId, accountId: ctx.accountId },
         include: { actions: true }
@@ -264,6 +272,7 @@ export const taskFieldRouter = createTRPCRouter({
                   newStatus: newStatus,
                   assignedTo: updatedSubtask.assignedTo ? { id: updatedSubtask.assignedTo.id, name: updatedSubtask.assignedTo.name } : null,
                   updatedAt: updatedSubtask.updatedAt.toISOString(),
+                  preflightNote,
                   automationSource: {
                     type: 'SMART_BUTTON',
                     buttonId: button.id,
@@ -328,6 +337,7 @@ export const taskFieldRouter = createTRPCRouter({
                     mainTaskId: updatedSubtask.mainTaskId,
                     title: updatedSubtask.mainTask.title,
                     completedAt: new Date().toISOString(),
+                    preflightNote,
                     automationSource: {
                       type: 'SMART_BUTTON',
                       buttonId: button.id,
@@ -372,6 +382,7 @@ export const taskFieldRouter = createTRPCRouter({
               mainTaskId: updatedMainTask.id,
               title: updatedMainTask.title,
               completedAt: updatedMainTask.completedAt?.toISOString() || new Date().toISOString(),
+              preflightNote,
               automationSource: {
                 type: 'SMART_BUTTON',
                 buttonId: button.id,
@@ -420,6 +431,7 @@ export const taskFieldRouter = createTRPCRouter({
                 title: subtask.title,
                 buttonId: button.id,
                 buttonName: button.name,
+                preflightNote,
                 assignedTo: subtask.assignedTo
                   ? { id: subtask.assignedTo.id, name: subtask.assignedTo.name }
                   : null,

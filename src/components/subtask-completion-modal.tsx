@@ -253,7 +253,11 @@ export function SubtaskCompletionModal({
           })
         }
       }
-      await executeSmartButton.mutateAsync({ buttonId: smartButtonIdAfterComplete, subtaskId })
+      await executeSmartButton.mutateAsync({
+        buttonId: smartButtonIdAfterComplete,
+        subtaskId,
+        preflightNote: completionComment.trim() || undefined,
+      })
       toast.success('Automações executadas com sucesso.')
       onSuccess()
       onOpenChange(false)
